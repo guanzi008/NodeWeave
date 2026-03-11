@@ -11,9 +11,10 @@ import (
 func TestDirectAttemptReasonUsesManualRecoverAfterCooldown(t *testing.T) {
 	now := time.Now().UTC()
 	policy := directAttemptPolicy{
-		TransportFreshnessWindow:        30 * time.Second,
-		DirectAttemptCooldown:           5 * time.Second,
-		DirectAttemptManualRecoverAfter: 20 * time.Second,
+		TransportFreshnessWindow:               30 * time.Second,
+		DirectAttemptCooldown:                  5 * time.Second,
+		DirectAttemptManualRecoverAfter:        20 * time.Second,
+		DirectAttemptTimeoutManualRecoverAfter: 20 * time.Second,
 	}
 
 	reason, schedule := directAttemptReasonWithPolicy(api.PeerTransportState{
@@ -34,9 +35,10 @@ func TestDirectAttemptReasonUsesManualRecoverAfterCooldown(t *testing.T) {
 func TestDirectAttemptReasonSkipsDuringCooldown(t *testing.T) {
 	now := time.Now().UTC()
 	policy := directAttemptPolicy{
-		TransportFreshnessWindow:        30 * time.Second,
-		DirectAttemptCooldown:           10 * time.Second,
-		DirectAttemptManualRecoverAfter: 20 * time.Second,
+		TransportFreshnessWindow:                 30 * time.Second,
+		DirectAttemptCooldown:                    10 * time.Second,
+		DirectAttemptManualRecoverAfter:          20 * time.Second,
+		DirectAttemptRelayKeptManualRecoverAfter: 20 * time.Second,
 	}
 
 	reason, schedule := directAttemptReasonWithPolicy(api.PeerTransportState{
@@ -57,9 +59,10 @@ func TestDirectAttemptReasonSkipsDuringCooldown(t *testing.T) {
 func TestDirectAttemptReasonUsesRelayActiveBeforeManualRecover(t *testing.T) {
 	now := time.Now().UTC()
 	policy := directAttemptPolicy{
-		TransportFreshnessWindow:        30 * time.Second,
-		DirectAttemptCooldown:           5 * time.Second,
-		DirectAttemptManualRecoverAfter: 20 * time.Second,
+		TransportFreshnessWindow:               30 * time.Second,
+		DirectAttemptCooldown:                  5 * time.Second,
+		DirectAttemptManualRecoverAfter:        20 * time.Second,
+		DirectAttemptTimeoutManualRecoverAfter: 20 * time.Second,
 	}
 
 	reason, schedule := directAttemptReasonWithPolicy(api.PeerTransportState{
@@ -71,6 +74,45 @@ func TestDirectAttemptReasonUsesRelayActiveBeforeManualRecover(t *testing.T) {
 	}, now, policy)
 	if !schedule || reason != "relay_active" {
 		t.Fatalf("expected relay_active before manual recovery criteria, got reason=%q schedule=%v", reason, schedule)
+	}
+}
+
+func TestDirectAttemptReasonUsesResultSpecificManualRecoverThresholds(t *testing.T) {
+	now := time.Now().UTC()
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:                 30 * time.Second,
+		DirectAttemptCooldown:                    2 * time.Second,
+		DirectAttemptManualRecoverAfter:          20 * time.Second,
+		DirectAttemptTimeoutManualRecoverAfter:   12 * time.Second,
+		DirectAttemptRelayKeptManualRecoverAfter: 4 * time.Second,
+	}
+
+	reason, schedule := directAttemptReasonWithPolicy(api.PeerTransportState{
+		ActiveKind:              "relay",
+		ReportedAt:              now,
+		LastDirectAttemptAt:     now.Add(-6 * time.Second),
+		LastDirectAttemptResult: "relay_kept",
+	}, api.PeerTransportState{
+		ActiveKind:          "relay",
+		ReportedAt:          now,
+		LastDirectAttemptAt: now.Add(-6 * time.Second),
+	}, now, policy)
+	if !schedule || reason != "manual_recover" {
+		t.Fatalf("expected relay_kept to escalate to manual_recover, got reason=%q schedule=%v", reason, schedule)
+	}
+
+	reason, schedule = directAttemptReasonWithPolicy(api.PeerTransportState{
+		ActiveKind:              "relay",
+		ReportedAt:              now,
+		LastDirectAttemptAt:     now.Add(-6 * time.Second),
+		LastDirectAttemptResult: "timeout",
+	}, api.PeerTransportState{
+		ActiveKind:          "relay",
+		ReportedAt:          now,
+		LastDirectAttemptAt: now.Add(-6 * time.Second),
+	}, now, policy)
+	if !schedule || reason != "relay_active" {
+		t.Fatalf("expected timeout to remain relay_active before its manual threshold, got reason=%q schedule=%v", reason, schedule)
 	}
 }
 
@@ -113,6 +155,18 @@ func TestDirectAttemptPolicyDefaultsResultCooldownsToBase(t *testing.T) {
 	}
 	if policy.DirectAttemptRelayKeptCooldown != 7*time.Second {
 		t.Fatalf("expected relay_kept cooldown to fall back to base value, got %s", policy.DirectAttemptRelayKeptCooldown)
+	}
+}
+
+func TestDirectAttemptPolicyDefaultsResultSpecificManualRecoverThresholdsToBase(t *testing.T) {
+	policy := directAttemptPolicyFromConfig(config.Config{
+		DirectAttemptManualRecoverAfter: 11 * time.Second,
+	})
+	if policy.DirectAttemptTimeoutManualRecoverAfter != 11*time.Second {
+		t.Fatalf("expected timeout manual recover threshold to fall back to base value, got %s", policy.DirectAttemptTimeoutManualRecoverAfter)
+	}
+	if policy.DirectAttemptRelayKeptManualRecoverAfter != 11*time.Second {
+		t.Fatalf("expected relay_kept manual recover threshold to fall back to base value, got %s", policy.DirectAttemptRelayKeptManualRecoverAfter)
 	}
 }
 

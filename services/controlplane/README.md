@@ -44,6 +44,8 @@ go run ./cmd/controlplane
 - `CONTROLPLANE_DIRECT_ATTEMPT_BURST_INTERVAL=80ms`
 - `CONTROLPLANE_DIRECT_ATTEMPT_RETENTION=2s`
 - `CONTROLPLANE_DIRECT_ATTEMPT_MANUAL_RECOVER_AFTER=30s`
+- `CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_MANUAL_RECOVER_AFTER=30s`
+- `CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_MANUAL_RECOVER_AFTER=30s`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD=200ms`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW=900ms`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL=60ms`
@@ -57,6 +59,7 @@ go run ./cmd/controlplane
 - direct timeout / relay_kept 后进入冷却窗口，避免连续打洞
 - `timeout` 和 `relay_kept` 可以分别配置不同 cooldown；未单独设置时回退到 `CONTROLPLANE_DIRECT_ATTEMPT_COOLDOWN`
 - 冷却结束后，如果 relay 仍持续活跃，则后续尝试会标记成 `manual_recover`
+- `timeout` 和 `relay_kept` 也可以分别配置不同的 `manual_recover` 升级阈值；未单独设置时回退到 `CONTROLPLANE_DIRECT_ATTEMPT_MANUAL_RECOVER_AFTER`
 - `relay_active` 和 `manual_recover` 可以使用独立的 lead/window/burst profile，不必和 `fresh_endpoints` 共用一套时间窗
 
 ## 测试

@@ -16,44 +16,48 @@ const (
 )
 
 type directAttemptPolicy struct {
-	NodeOnlineWindow                  time.Duration
-	EndpointFreshnessWindow           time.Duration
-	TransportFreshnessWindow          time.Duration
-	DirectAttemptCooldown             time.Duration
-	DirectAttemptTimeoutCooldown      time.Duration
-	DirectAttemptRelayKeptCooldown    time.Duration
-	DirectAttemptLead                 time.Duration
-	DirectAttemptWindow               time.Duration
-	DirectAttemptBurstInterval        time.Duration
-	DirectAttemptRetention            time.Duration
-	DirectAttemptManualRecoverAfter   time.Duration
-	RelayActiveAttemptLead            time.Duration
-	RelayActiveAttemptWindow          time.Duration
-	RelayActiveAttemptBurstInterval   time.Duration
-	ManualRecoverAttemptLead          time.Duration
-	ManualRecoverAttemptWindow        time.Duration
-	ManualRecoverAttemptBurstInterval time.Duration
+	NodeOnlineWindow                         time.Duration
+	EndpointFreshnessWindow                  time.Duration
+	TransportFreshnessWindow                 time.Duration
+	DirectAttemptCooldown                    time.Duration
+	DirectAttemptTimeoutCooldown             time.Duration
+	DirectAttemptRelayKeptCooldown           time.Duration
+	DirectAttemptLead                        time.Duration
+	DirectAttemptWindow                      time.Duration
+	DirectAttemptBurstInterval               time.Duration
+	DirectAttemptRetention                   time.Duration
+	DirectAttemptManualRecoverAfter          time.Duration
+	DirectAttemptTimeoutManualRecoverAfter   time.Duration
+	DirectAttemptRelayKeptManualRecoverAfter time.Duration
+	RelayActiveAttemptLead                   time.Duration
+	RelayActiveAttemptWindow                 time.Duration
+	RelayActiveAttemptBurstInterval          time.Duration
+	ManualRecoverAttemptLead                 time.Duration
+	ManualRecoverAttemptWindow               time.Duration
+	ManualRecoverAttemptBurstInterval        time.Duration
 }
 
 func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	policy := directAttemptPolicy{
-		NodeOnlineWindow:                  cfg.NodeOnlineWindow,
-		EndpointFreshnessWindow:           cfg.EndpointFreshnessWindow,
-		TransportFreshnessWindow:          cfg.TransportFreshnessWindow,
-		DirectAttemptCooldown:             cfg.DirectAttemptCooldown,
-		DirectAttemptTimeoutCooldown:      cfg.DirectAttemptTimeoutCooldown,
-		DirectAttemptRelayKeptCooldown:    cfg.DirectAttemptRelayKeptCooldown,
-		DirectAttemptLead:                 cfg.DirectAttemptLead,
-		DirectAttemptWindow:               cfg.DirectAttemptWindow,
-		DirectAttemptBurstInterval:        cfg.DirectAttemptBurstInterval,
-		DirectAttemptRetention:            cfg.DirectAttemptRetention,
-		DirectAttemptManualRecoverAfter:   cfg.DirectAttemptManualRecoverAfter,
-		RelayActiveAttemptLead:            cfg.RelayActiveAttemptLead,
-		RelayActiveAttemptWindow:          cfg.RelayActiveAttemptWindow,
-		RelayActiveAttemptBurstInterval:   cfg.RelayActiveAttemptBurstInterval,
-		ManualRecoverAttemptLead:          cfg.ManualRecoverAttemptLead,
-		ManualRecoverAttemptWindow:        cfg.ManualRecoverAttemptWindow,
-		ManualRecoverAttemptBurstInterval: cfg.ManualRecoverAttemptBurstInterval,
+		NodeOnlineWindow:                         cfg.NodeOnlineWindow,
+		EndpointFreshnessWindow:                  cfg.EndpointFreshnessWindow,
+		TransportFreshnessWindow:                 cfg.TransportFreshnessWindow,
+		DirectAttemptCooldown:                    cfg.DirectAttemptCooldown,
+		DirectAttemptTimeoutCooldown:             cfg.DirectAttemptTimeoutCooldown,
+		DirectAttemptRelayKeptCooldown:           cfg.DirectAttemptRelayKeptCooldown,
+		DirectAttemptLead:                        cfg.DirectAttemptLead,
+		DirectAttemptWindow:                      cfg.DirectAttemptWindow,
+		DirectAttemptBurstInterval:               cfg.DirectAttemptBurstInterval,
+		DirectAttemptRetention:                   cfg.DirectAttemptRetention,
+		DirectAttemptManualRecoverAfter:          cfg.DirectAttemptManualRecoverAfter,
+		DirectAttemptTimeoutManualRecoverAfter:   cfg.DirectAttemptTimeoutManualRecoverAfter,
+		DirectAttemptRelayKeptManualRecoverAfter: cfg.DirectAttemptRelayKeptManualRecoverAfter,
+		RelayActiveAttemptLead:                   cfg.RelayActiveAttemptLead,
+		RelayActiveAttemptWindow:                 cfg.RelayActiveAttemptWindow,
+		RelayActiveAttemptBurstInterval:          cfg.RelayActiveAttemptBurstInterval,
+		ManualRecoverAttemptLead:                 cfg.ManualRecoverAttemptLead,
+		ManualRecoverAttemptWindow:               cfg.ManualRecoverAttemptWindow,
+		ManualRecoverAttemptBurstInterval:        cfg.ManualRecoverAttemptBurstInterval,
 	}
 	if policy.NodeOnlineWindow <= 0 {
 		policy.NodeOnlineWindow = 30 * time.Second
@@ -87,6 +91,12 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	}
 	if policy.DirectAttemptManualRecoverAfter <= 0 {
 		policy.DirectAttemptManualRecoverAfter = 30 * time.Second
+	}
+	if policy.DirectAttemptTimeoutManualRecoverAfter <= 0 {
+		policy.DirectAttemptTimeoutManualRecoverAfter = policy.DirectAttemptManualRecoverAfter
+	}
+	if policy.DirectAttemptRelayKeptManualRecoverAfter <= 0 {
+		policy.DirectAttemptRelayKeptManualRecoverAfter = policy.DirectAttemptManualRecoverAfter
 	}
 	if policy.RelayActiveAttemptLead <= 0 {
 		policy.RelayActiveAttemptLead = policy.DirectAttemptLead
@@ -405,7 +415,7 @@ func shouldUseManualRecover(state api.PeerTransportState, now time.Time, policy 
 	if attemptAt.IsZero() {
 		attemptAt = state.ReportedAt.UTC()
 	}
-	return now.Sub(attemptAt) >= policy.DirectAttemptManualRecoverAfter
+	return now.Sub(attemptAt) >= policy.manualRecoverAfterForResult(state.LastDirectAttemptResult)
 }
 
 func (p directAttemptPolicy) cooldownForResult(result string) time.Duration {
@@ -422,6 +432,23 @@ func (p directAttemptPolicy) cooldownForResult(result string) time.Duration {
 		return p.DirectAttemptCooldown
 	default:
 		return 0
+	}
+}
+
+func (p directAttemptPolicy) manualRecoverAfterForResult(result string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "timeout":
+		if p.DirectAttemptTimeoutManualRecoverAfter > 0 {
+			return p.DirectAttemptTimeoutManualRecoverAfter
+		}
+		return p.DirectAttemptManualRecoverAfter
+	case "relay_kept":
+		if p.DirectAttemptRelayKeptManualRecoverAfter > 0 {
+			return p.DirectAttemptRelayKeptManualRecoverAfter
+		}
+		return p.DirectAttemptManualRecoverAfter
+	default:
+		return p.DirectAttemptManualRecoverAfter
 	}
 }
 

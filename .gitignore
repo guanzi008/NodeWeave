@@ -2,7 +2,8 @@ bin/
 dist/
 coverage.out
 .codex-team-runs/
-scripts/__pycache__/
+__pycache__/
+*.pyc
 *.db
 *.sqlite
 *.sqlite3

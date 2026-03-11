@@ -116,6 +116,61 @@ func TestDirectAttemptReasonUsesResultSpecificManualRecoverThresholds(t *testing
 	}
 }
 
+func TestDirectAttemptReasonSuppressesAfterFailureBudget(t *testing.T) {
+	now := time.Now().UTC()
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:           30 * time.Second,
+		DirectAttemptCooldown:              2 * time.Second,
+		DirectAttemptFailureSuppressAfter:  3,
+		DirectAttemptFailureSuppressWindow: 90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:  3,
+		DirectAttemptTimeoutSuppressWindow: 90 * time.Second,
+	}
+
+	reason, schedule := directAttemptReasonWithPolicy(api.PeerTransportState{
+		ActiveKind:                "relay",
+		ReportedAt:                now,
+		LastDirectAttemptAt:       now.Add(-6 * time.Second),
+		LastDirectAttemptResult:   "timeout",
+		ConsecutiveDirectFailures: 3,
+	}, api.PeerTransportState{
+		ActiveKind:          "relay",
+		ReportedAt:          now,
+		LastDirectAttemptAt: now.Add(-6 * time.Second),
+	}, now, policy)
+	if schedule || reason != "" {
+		t.Fatalf("expected failure budget suppression to stop scheduling, got reason=%q schedule=%v", reason, schedule)
+	}
+}
+
+func TestDirectAttemptReasonSkipsSuppressionAfterRecentSuccess(t *testing.T) {
+	now := time.Now().UTC()
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:             30 * time.Second,
+		DirectAttemptCooldown:                2 * time.Second,
+		DirectAttemptFailureSuppressAfter:    2,
+		DirectAttemptFailureSuppressWindow:   90 * time.Second,
+		DirectAttemptRelayKeptSuppressAfter:  2,
+		DirectAttemptRelayKeptSuppressWindow: 90 * time.Second,
+	}
+
+	reason, schedule := directAttemptReasonWithPolicy(api.PeerTransportState{
+		ActiveKind:                "relay",
+		ReportedAt:                now,
+		LastDirectAttemptAt:       now.Add(-6 * time.Second),
+		LastDirectAttemptResult:   "relay_kept",
+		LastDirectSuccessAt:       now.Add(-1 * time.Second),
+		ConsecutiveDirectFailures: 2,
+	}, api.PeerTransportState{
+		ActiveKind:          "relay",
+		ReportedAt:          now,
+		LastDirectAttemptAt: now.Add(-6 * time.Second),
+	}, now, policy)
+	if !schedule || reason == "" {
+		t.Fatalf("expected recent success to bypass suppression, got reason=%q schedule=%v", reason, schedule)
+	}
+}
+
 func TestDirectAttemptCoolingDownUsesResultSpecificCooldowns(t *testing.T) {
 	now := time.Now().UTC()
 	policy := directAttemptPolicy{
@@ -167,6 +222,25 @@ func TestDirectAttemptPolicyDefaultsResultSpecificManualRecoverThresholdsToBase(
 	}
 	if policy.DirectAttemptRelayKeptManualRecoverAfter != 11*time.Second {
 		t.Fatalf("expected relay_kept manual recover threshold to fall back to base value, got %s", policy.DirectAttemptRelayKeptManualRecoverAfter)
+	}
+}
+
+func TestDirectAttemptPolicyDefaultsResultSpecificSuppressionToBase(t *testing.T) {
+	policy := directAttemptPolicyFromConfig(config.Config{
+		DirectAttemptFailureSuppressAfter:  5,
+		DirectAttemptFailureSuppressWindow: 45 * time.Second,
+	})
+	if policy.DirectAttemptTimeoutSuppressAfter != 5 {
+		t.Fatalf("expected timeout suppression threshold to fall back to base value, got %d", policy.DirectAttemptTimeoutSuppressAfter)
+	}
+	if policy.DirectAttemptRelayKeptSuppressAfter != 5 {
+		t.Fatalf("expected relay_kept suppression threshold to fall back to base value, got %d", policy.DirectAttemptRelayKeptSuppressAfter)
+	}
+	if policy.DirectAttemptTimeoutSuppressWindow != 45*time.Second {
+		t.Fatalf("expected timeout suppression window to fall back to base value, got %s", policy.DirectAttemptTimeoutSuppressWindow)
+	}
+	if policy.DirectAttemptRelayKeptSuppressWindow != 45*time.Second {
+		t.Fatalf("expected relay_kept suppression window to fall back to base value, got %s", policy.DirectAttemptRelayKeptSuppressWindow)
 	}
 }
 

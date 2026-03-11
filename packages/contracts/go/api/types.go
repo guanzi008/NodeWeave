@@ -67,12 +67,14 @@ type NATReport struct {
 }
 
 type PeerTransportState struct {
-	PeerNodeID              string    `json:"peer_node_id"`
-	ActiveKind              string    `json:"active_kind,omitempty"`
-	ActiveAddress           string    `json:"active_address,omitempty"`
-	ReportedAt              time.Time `json:"reported_at,omitempty"`
-	LastDirectAttemptAt     time.Time `json:"last_direct_attempt_at,omitempty"`
-	LastDirectAttemptResult string    `json:"last_direct_attempt_result,omitempty"`
+	PeerNodeID                string    `json:"peer_node_id"`
+	ActiveKind                string    `json:"active_kind,omitempty"`
+	ActiveAddress             string    `json:"active_address,omitempty"`
+	ReportedAt                time.Time `json:"reported_at,omitempty"`
+	LastDirectAttemptAt       time.Time `json:"last_direct_attempt_at,omitempty"`
+	LastDirectAttemptResult   string    `json:"last_direct_attempt_result,omitempty"`
+	LastDirectSuccessAt       time.Time `json:"last_direct_success_at,omitempty"`
+	ConsecutiveDirectFailures int       `json:"consecutive_direct_failures,omitempty"`
 }
 
 type Route struct {
@@ -94,23 +96,25 @@ type DNSZone struct {
 }
 
 type Peer struct {
-	NodeID                          string                `json:"node_id"`
-	OverlayIP                       string                `json:"overlay_ip"`
-	PublicKey                       string                `json:"public_key"`
-	Endpoints                       []string              `json:"endpoints,omitempty"`
-	EndpointRecords                 []EndpointObservation `json:"endpoint_records,omitempty"`
-	RelayRegion                     string                `json:"relay_region"`
-	AllowedIPs                      []string              `json:"allowed_ips,omitempty"`
-	Status                          string                `json:"status"`
-	LastSeenAt                      time.Time             `json:"last_seen_at"`
-	NATMappingBehavior              string                `json:"nat_mapping_behavior,omitempty"`
-	NATReachable                    bool                  `json:"nat_reachable"`
-	NATReportedAt                   time.Time             `json:"nat_reported_at,omitempty"`
-	ObservedTransportKind           string                `json:"observed_transport_kind,omitempty"`
-	ObservedTransportAddress        string                `json:"observed_transport_address,omitempty"`
-	ObservedTransportReportedAt     time.Time             `json:"observed_transport_reported_at,omitempty"`
-	ObservedLastDirectAttemptAt     time.Time             `json:"observed_last_direct_attempt_at,omitempty"`
-	ObservedLastDirectAttemptResult string                `json:"observed_last_direct_attempt_result,omitempty"`
+	NodeID                            string                `json:"node_id"`
+	OverlayIP                         string                `json:"overlay_ip"`
+	PublicKey                         string                `json:"public_key"`
+	Endpoints                         []string              `json:"endpoints,omitempty"`
+	EndpointRecords                   []EndpointObservation `json:"endpoint_records,omitempty"`
+	RelayRegion                       string                `json:"relay_region"`
+	AllowedIPs                        []string              `json:"allowed_ips,omitempty"`
+	Status                            string                `json:"status"`
+	LastSeenAt                        time.Time             `json:"last_seen_at"`
+	NATMappingBehavior                string                `json:"nat_mapping_behavior,omitempty"`
+	NATReachable                      bool                  `json:"nat_reachable"`
+	NATReportedAt                     time.Time             `json:"nat_reported_at,omitempty"`
+	ObservedTransportKind             string                `json:"observed_transport_kind,omitempty"`
+	ObservedTransportAddress          string                `json:"observed_transport_address,omitempty"`
+	ObservedTransportReportedAt       time.Time             `json:"observed_transport_reported_at,omitempty"`
+	ObservedLastDirectAttemptAt       time.Time             `json:"observed_last_direct_attempt_at,omitempty"`
+	ObservedLastDirectAttemptResult   string                `json:"observed_last_direct_attempt_result,omitempty"`
+	ObservedLastDirectSuccessAt       time.Time             `json:"observed_last_direct_success_at,omitempty"`
+	ObservedConsecutiveDirectFailures int                   `json:"observed_consecutive_direct_failures,omitempty"`
 }
 
 type RelayNode struct {

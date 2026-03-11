@@ -531,6 +531,16 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	if !report.Reachable {
 		t.Fatalf("expected warmup to establish direct session, got %#v", report)
 	}
+	if _, err := transportA.ExecuteDirectAttempt(context.Background(), secureudp.DirectAttempt{
+		AttemptID:     "attempt-heartbeat-success",
+		PeerNodeID:    "node-b",
+		Candidates:    []string{transportB.Address()},
+		Window:        300 * time.Millisecond,
+		BurstInterval: 50 * time.Millisecond,
+		Reason:        "relay_active",
+	}); err != nil {
+		t.Fatalf("execute direct attempt for heartbeat summary: %v", err)
+	}
 
 	var received api.HeartbeatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -582,6 +592,12 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	}
 	if received.PeerTransportStates[0].PeerNodeID != "node-b" || received.PeerTransportStates[0].ActiveKind != "direct" {
 		t.Fatalf("expected direct peer transport summary, got %#v", received.PeerTransportStates)
+	}
+	if received.PeerTransportStates[0].LastDirectSuccessAt.IsZero() {
+		t.Fatalf("expected direct success timestamp in peer transport state, got %#v", received.PeerTransportStates)
+	}
+	if received.PeerTransportStates[0].ConsecutiveDirectFailures != 0 {
+		t.Fatalf("expected direct success to reset failure budget, got %#v", received.PeerTransportStates)
 	}
 
 	transportCancel()

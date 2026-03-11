@@ -733,6 +733,8 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 			peer.ObservedTransportReportedAt = transportState.ReportedAt
 			peer.ObservedLastDirectAttemptAt = transportState.LastDirectAttemptAt
 			peer.ObservedLastDirectAttemptResult = transportState.LastDirectAttemptResult
+			peer.ObservedLastDirectSuccessAt = transportState.LastDirectSuccessAt
+			peer.ObservedConsecutiveDirectFailures = transportState.ConsecutiveDirectFailures
 		}
 		peers = append(peers, peer)
 	}

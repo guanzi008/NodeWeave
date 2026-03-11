@@ -57,31 +57,33 @@ type Report struct {
 }
 
 type PeerStatus struct {
-	NodeID                  string            `json:"node_id"`
-	ActiveAddress           string            `json:"active_address,omitempty"`
-	ActiveKind              string            `json:"active_kind,omitempty"`
-	ActiveSince             time.Time         `json:"active_since,omitempty"`
-	LastPathChangeAt        time.Time         `json:"last_path_change_at,omitempty"`
-	LastDirectTryAt         time.Time         `json:"last_direct_try_at,omitempty"`
-	NextDirectRetryAt       time.Time         `json:"next_direct_retry_at,omitempty"`
-	LastEstablishedAt       time.Time         `json:"last_established_at,omitempty"`
-	LastSendSuccessAt       time.Time         `json:"last_send_success_at,omitempty"`
-	LastReceiveAt           time.Time         `json:"last_receive_at,omitempty"`
-	LastSendErrorAt         time.Time         `json:"last_send_error_at,omitempty"`
-	LastSendError           string            `json:"last_send_error,omitempty"`
-	LastDirectAttemptID     string            `json:"last_direct_attempt_id,omitempty"`
-	LastDirectAttemptReason string            `json:"last_direct_attempt_reason,omitempty"`
-	LastDirectAttemptAt     time.Time         `json:"last_direct_attempt_at,omitempty"`
-	LastDirectAttemptResult string            `json:"last_direct_attempt_result,omitempty"`
-	SessionsEstablished     int               `json:"sessions_established,omitempty"`
-	HandshakeTimeouts       int               `json:"handshake_timeouts,omitempty"`
-	RelayFallbacks          int               `json:"relay_fallbacks,omitempty"`
-	DirectRecoveries        int               `json:"direct_recoveries,omitempty"`
-	SentPackets             int               `json:"sent_packets,omitempty"`
-	SentBytes               int64             `json:"sent_bytes,omitempty"`
-	ReceivedPackets         int               `json:"received_packets,omitempty"`
-	ReceivedBytes           int64             `json:"received_bytes,omitempty"`
-	Candidates              []CandidateStatus `json:"candidates"`
+	NodeID                    string            `json:"node_id"`
+	ActiveAddress             string            `json:"active_address,omitempty"`
+	ActiveKind                string            `json:"active_kind,omitempty"`
+	ActiveSince               time.Time         `json:"active_since,omitempty"`
+	LastPathChangeAt          time.Time         `json:"last_path_change_at,omitempty"`
+	LastDirectTryAt           time.Time         `json:"last_direct_try_at,omitempty"`
+	NextDirectRetryAt         time.Time         `json:"next_direct_retry_at,omitempty"`
+	LastEstablishedAt         time.Time         `json:"last_established_at,omitempty"`
+	LastSendSuccessAt         time.Time         `json:"last_send_success_at,omitempty"`
+	LastReceiveAt             time.Time         `json:"last_receive_at,omitempty"`
+	LastSendErrorAt           time.Time         `json:"last_send_error_at,omitempty"`
+	LastSendError             string            `json:"last_send_error,omitempty"`
+	LastDirectAttemptID       string            `json:"last_direct_attempt_id,omitempty"`
+	LastDirectAttemptReason   string            `json:"last_direct_attempt_reason,omitempty"`
+	LastDirectAttemptAt       time.Time         `json:"last_direct_attempt_at,omitempty"`
+	LastDirectAttemptResult   string            `json:"last_direct_attempt_result,omitempty"`
+	LastDirectSuccessAt       time.Time         `json:"last_direct_success_at,omitempty"`
+	ConsecutiveDirectFailures int               `json:"consecutive_direct_failures,omitempty"`
+	SessionsEstablished       int               `json:"sessions_established,omitempty"`
+	HandshakeTimeouts         int               `json:"handshake_timeouts,omitempty"`
+	RelayFallbacks            int               `json:"relay_fallbacks,omitempty"`
+	DirectRecoveries          int               `json:"direct_recoveries,omitempty"`
+	SentPackets               int               `json:"sent_packets,omitempty"`
+	SentBytes                 int64             `json:"sent_bytes,omitempty"`
+	ReceivedPackets           int               `json:"received_packets,omitempty"`
+	ReceivedBytes             int64             `json:"received_bytes,omitempty"`
+	Candidates                []CandidateStatus `json:"candidates"`
 }
 
 type CandidateStatus struct {
@@ -151,24 +153,26 @@ type Transport struct {
 }
 
 type peerMetrics struct {
-	ActiveSince             time.Time
-	LastPathChangeAt        time.Time
-	LastSendSuccessAt       time.Time
-	LastReceiveAt           time.Time
-	LastSendErrorAt         time.Time
-	LastSendError           string
-	LastDirectAttemptID     string
-	LastDirectAttemptReason string
-	LastDirectAttemptAt     time.Time
-	LastDirectAttemptResult string
-	SessionsEstablished     int
-	HandshakeTimeouts       int
-	RelayFallbacks          int
-	DirectRecoveries        int
-	SentPackets             int
-	SentBytes               int64
-	ReceivedPackets         int
-	ReceivedBytes           int64
+	ActiveSince               time.Time
+	LastPathChangeAt          time.Time
+	LastSendSuccessAt         time.Time
+	LastReceiveAt             time.Time
+	LastSendErrorAt           time.Time
+	LastSendError             string
+	LastDirectAttemptID       string
+	LastDirectAttemptReason   string
+	LastDirectAttemptAt       time.Time
+	LastDirectAttemptResult   string
+	LastDirectSuccessAt       time.Time
+	ConsecutiveDirectFailures int
+	SessionsEstablished       int
+	HandshakeTimeouts         int
+	RelayFallbacks            int
+	DirectRecoveries          int
+	SentPackets               int
+	SentBytes                 int64
+	ReceivedPackets           int
+	ReceivedBytes             int64
 }
 
 type envelope struct {
@@ -373,29 +377,31 @@ func (t *Transport) Snapshot() Report {
 	for _, peerNodeID := range peerIDs {
 		stats := peerStats[peerNodeID]
 		peerStatus := PeerStatus{
-			NodeID:                  peerNodeID,
-			ActiveAddress:           strings.TrimSpace(activePeer[peerNodeID]),
-			ActiveKind:              t.candidateKindForPeer(peerNodeID, activePeer[peerNodeID]),
-			ActiveSince:             stats.ActiveSince,
-			LastPathChangeAt:        stats.LastPathChangeAt,
-			LastDirectTryAt:         lastDirectTry[peerNodeID],
-			LastSendSuccessAt:       stats.LastSendSuccessAt,
-			LastReceiveAt:           stats.LastReceiveAt,
-			LastSendErrorAt:         stats.LastSendErrorAt,
-			LastSendError:           stats.LastSendError,
-			LastDirectAttemptID:     stats.LastDirectAttemptID,
-			LastDirectAttemptReason: stats.LastDirectAttemptReason,
-			LastDirectAttemptAt:     stats.LastDirectAttemptAt,
-			LastDirectAttemptResult: stats.LastDirectAttemptResult,
-			SessionsEstablished:     stats.SessionsEstablished,
-			HandshakeTimeouts:       stats.HandshakeTimeouts,
-			RelayFallbacks:          stats.RelayFallbacks,
-			DirectRecoveries:        stats.DirectRecoveries,
-			SentPackets:             stats.SentPackets,
-			SentBytes:               stats.SentBytes,
-			ReceivedPackets:         stats.ReceivedPackets,
-			ReceivedBytes:           stats.ReceivedBytes,
-			Candidates:              []CandidateStatus{},
+			NodeID:                    peerNodeID,
+			ActiveAddress:             strings.TrimSpace(activePeer[peerNodeID]),
+			ActiveKind:                t.candidateKindForPeer(peerNodeID, activePeer[peerNodeID]),
+			ActiveSince:               stats.ActiveSince,
+			LastPathChangeAt:          stats.LastPathChangeAt,
+			LastDirectTryAt:           lastDirectTry[peerNodeID],
+			LastSendSuccessAt:         stats.LastSendSuccessAt,
+			LastReceiveAt:             stats.LastReceiveAt,
+			LastSendErrorAt:           stats.LastSendErrorAt,
+			LastSendError:             stats.LastSendError,
+			LastDirectAttemptID:       stats.LastDirectAttemptID,
+			LastDirectAttemptReason:   stats.LastDirectAttemptReason,
+			LastDirectAttemptAt:       stats.LastDirectAttemptAt,
+			LastDirectAttemptResult:   stats.LastDirectAttemptResult,
+			LastDirectSuccessAt:       stats.LastDirectSuccessAt,
+			ConsecutiveDirectFailures: stats.ConsecutiveDirectFailures,
+			SessionsEstablished:       stats.SessionsEstablished,
+			HandshakeTimeouts:         stats.HandshakeTimeouts,
+			RelayFallbacks:            stats.RelayFallbacks,
+			DirectRecoveries:          stats.DirectRecoveries,
+			SentPackets:               stats.SentPackets,
+			SentBytes:                 stats.SentBytes,
+			ReceivedPackets:           stats.ReceivedPackets,
+			ReceivedBytes:             stats.ReceivedBytes,
+			Candidates:                []CandidateStatus{},
 		}
 		if peerStatus.ActiveAddress == "" {
 			peerStatus.ActiveKind = ""
@@ -1406,6 +1412,13 @@ func (t *Transport) recordDirectAttemptResult(peerNodeID, attemptID, reason stri
 	metrics.LastDirectAttemptReason = strings.TrimSpace(reason)
 	metrics.LastDirectAttemptAt = attemptedAt
 	metrics.LastDirectAttemptResult = strings.TrimSpace(result)
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "success":
+		metrics.LastDirectSuccessAt = attemptedAt
+		metrics.ConsecutiveDirectFailures = 0
+	case "timeout", "relay_kept":
+		metrics.ConsecutiveDirectFailures++
+	}
 	t.peerStats[peerNodeID] = metrics
 }
 

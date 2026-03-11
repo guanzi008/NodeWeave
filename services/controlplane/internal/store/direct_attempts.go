@@ -29,6 +29,12 @@ type directAttemptPolicy struct {
 	DirectAttemptManualRecoverAfter          time.Duration
 	DirectAttemptTimeoutManualRecoverAfter   time.Duration
 	DirectAttemptRelayKeptManualRecoverAfter time.Duration
+	DirectAttemptFailureSuppressAfter        int
+	DirectAttemptTimeoutSuppressAfter        int
+	DirectAttemptRelayKeptSuppressAfter      int
+	DirectAttemptFailureSuppressWindow       time.Duration
+	DirectAttemptTimeoutSuppressWindow       time.Duration
+	DirectAttemptRelayKeptSuppressWindow     time.Duration
 	RelayActiveAttemptLead                   time.Duration
 	RelayActiveAttemptWindow                 time.Duration
 	RelayActiveAttemptBurstInterval          time.Duration
@@ -52,6 +58,12 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 		DirectAttemptManualRecoverAfter:          cfg.DirectAttemptManualRecoverAfter,
 		DirectAttemptTimeoutManualRecoverAfter:   cfg.DirectAttemptTimeoutManualRecoverAfter,
 		DirectAttemptRelayKeptManualRecoverAfter: cfg.DirectAttemptRelayKeptManualRecoverAfter,
+		DirectAttemptFailureSuppressAfter:        cfg.DirectAttemptFailureSuppressAfter,
+		DirectAttemptTimeoutSuppressAfter:        cfg.DirectAttemptTimeoutSuppressAfter,
+		DirectAttemptRelayKeptSuppressAfter:      cfg.DirectAttemptRelayKeptSuppressAfter,
+		DirectAttemptFailureSuppressWindow:       cfg.DirectAttemptFailureSuppressWindow,
+		DirectAttemptTimeoutSuppressWindow:       cfg.DirectAttemptTimeoutSuppressWindow,
+		DirectAttemptRelayKeptSuppressWindow:     cfg.DirectAttemptRelayKeptSuppressWindow,
 		RelayActiveAttemptLead:                   cfg.RelayActiveAttemptLead,
 		RelayActiveAttemptWindow:                 cfg.RelayActiveAttemptWindow,
 		RelayActiveAttemptBurstInterval:          cfg.RelayActiveAttemptBurstInterval,
@@ -97,6 +109,24 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	}
 	if policy.DirectAttemptRelayKeptManualRecoverAfter <= 0 {
 		policy.DirectAttemptRelayKeptManualRecoverAfter = policy.DirectAttemptManualRecoverAfter
+	}
+	if policy.DirectAttemptFailureSuppressAfter < 0 {
+		policy.DirectAttemptFailureSuppressAfter = 0
+	}
+	if policy.DirectAttemptTimeoutSuppressAfter <= 0 {
+		policy.DirectAttemptTimeoutSuppressAfter = policy.DirectAttemptFailureSuppressAfter
+	}
+	if policy.DirectAttemptRelayKeptSuppressAfter <= 0 {
+		policy.DirectAttemptRelayKeptSuppressAfter = policy.DirectAttemptFailureSuppressAfter
+	}
+	if policy.DirectAttemptFailureSuppressWindow < 0 {
+		policy.DirectAttemptFailureSuppressWindow = 0
+	}
+	if policy.DirectAttemptTimeoutSuppressWindow <= 0 {
+		policy.DirectAttemptTimeoutSuppressWindow = policy.DirectAttemptFailureSuppressWindow
+	}
+	if policy.DirectAttemptRelayKeptSuppressWindow <= 0 {
+		policy.DirectAttemptRelayKeptSuppressWindow = policy.DirectAttemptFailureSuppressWindow
 	}
 	if policy.RelayActiveAttemptLead <= 0 {
 		policy.RelayActiveAttemptLead = policy.DirectAttemptLead
@@ -314,6 +344,14 @@ func sanitizePeerTransportStates(now time.Time, states []api.PeerTransportState)
 		state.ActiveKind = strings.ToLower(strings.TrimSpace(state.ActiveKind))
 		state.ActiveAddress = strings.TrimSpace(state.ActiveAddress)
 		state.LastDirectAttemptResult = strings.TrimSpace(state.LastDirectAttemptResult)
+		if state.LastDirectSuccessAt.IsZero() {
+			state.LastDirectSuccessAt = time.Time{}
+		} else {
+			state.LastDirectSuccessAt = state.LastDirectSuccessAt.UTC()
+		}
+		if state.ConsecutiveDirectFailures < 0 {
+			state.ConsecutiveDirectFailures = 0
+		}
 		if state.ReportedAt.IsZero() {
 			state.ReportedAt = now
 		} else {
@@ -390,6 +428,9 @@ func directAttemptReasonWithPolicy(selfState, peerState api.PeerTransportState, 
 	if directAttemptCoolingDownWithPolicy(selfState, now, policy) || directAttemptCoolingDownWithPolicy(peerState, now, policy) {
 		return "", false
 	}
+	if directAttemptSuppressedWithPolicy(selfState, now, policy) || directAttemptSuppressedWithPolicy(peerState, now, policy) {
+		return "", false
+	}
 	if (selfFresh && selfState.ActiveKind == "relay") || (peerFresh && peerState.ActiveKind == "relay") {
 		if shouldUseManualRecover(selfState, now, policy) || shouldUseManualRecover(peerState, now, policy) {
 			return "manual_recover", true
@@ -397,6 +438,28 @@ func directAttemptReasonWithPolicy(selfState, peerState api.PeerTransportState, 
 		return "relay_active", true
 	}
 	return "fresh_endpoints", true
+}
+
+func directAttemptSuppressedWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
+	if !transportStateFreshWithPolicy(state, now, policy) {
+		return false
+	}
+	threshold := policy.suppressAfterForResult(state.LastDirectAttemptResult)
+	window := policy.suppressWindowForResult(state.LastDirectAttemptResult)
+	if threshold <= 0 || window <= 0 {
+		return false
+	}
+	if state.ConsecutiveDirectFailures < threshold {
+		return false
+	}
+	attemptAt := state.LastDirectAttemptAt.UTC()
+	if attemptAt.IsZero() {
+		attemptAt = state.ReportedAt.UTC()
+	}
+	if !state.LastDirectSuccessAt.IsZero() && state.LastDirectSuccessAt.After(attemptAt) {
+		return false
+	}
+	return now.Sub(attemptAt) < window
 }
 
 func shouldUseManualRecover(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
@@ -449,6 +512,40 @@ func (p directAttemptPolicy) manualRecoverAfterForResult(result string) time.Dur
 		return p.DirectAttemptManualRecoverAfter
 	default:
 		return p.DirectAttemptManualRecoverAfter
+	}
+}
+
+func (p directAttemptPolicy) suppressAfterForResult(result string) int {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "timeout":
+		if p.DirectAttemptTimeoutSuppressAfter > 0 {
+			return p.DirectAttemptTimeoutSuppressAfter
+		}
+		return p.DirectAttemptFailureSuppressAfter
+	case "relay_kept":
+		if p.DirectAttemptRelayKeptSuppressAfter > 0 {
+			return p.DirectAttemptRelayKeptSuppressAfter
+		}
+		return p.DirectAttemptFailureSuppressAfter
+	default:
+		return 0
+	}
+}
+
+func (p directAttemptPolicy) suppressWindowForResult(result string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "timeout":
+		if p.DirectAttemptTimeoutSuppressWindow > 0 {
+			return p.DirectAttemptTimeoutSuppressWindow
+		}
+		return p.DirectAttemptFailureSuppressWindow
+	case "relay_kept":
+		if p.DirectAttemptRelayKeptSuppressWindow > 0 {
+			return p.DirectAttemptRelayKeptSuppressWindow
+		}
+		return p.DirectAttemptFailureSuppressWindow
+	default:
+		return 0
 	}
 }
 

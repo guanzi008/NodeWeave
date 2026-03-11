@@ -190,6 +190,11 @@ components:
           format: date-time
         last_direct_attempt_result:
           type: string
+        last_direct_success_at:
+          type: string
+          format: date-time
+        consecutive_direct_failures:
+          type: integer
     DirectAttemptInstruction:
       type: object
       properties:
@@ -260,6 +265,11 @@ components:
           format: date-time
         observed_last_direct_attempt_result:
           type: string
+        observed_last_direct_success_at:
+          type: string
+          format: date-time
+        observed_consecutive_direct_failures:
+          type: integer
     HeartbeatRequest:
       type: object
       properties:

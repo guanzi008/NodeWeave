@@ -639,3 +639,79 @@ func TestMemoryStoreUsesRelayKeptManualRecoverThresholdOverride(t *testing.T) {
 		t.Fatalf("expected manual_recover after relay_kept threshold expiry, got %#v", resp.DirectAttempts)
 	}
 }
+
+func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
+	dataStore := NewMemoryStore(config.Config{
+		AdminEmail:                         "admin@example.com",
+		AdminPassword:                      "dev-password",
+		AdminToken:                         "dev-admin-token",
+		RegistrationToken:                  "dev-register-token",
+		DNSDomain:                          "internal.net",
+		DirectAttemptCooldown:              2 * time.Second,
+		DirectAttemptFailureSuppressAfter:  3,
+		DirectAttemptFailureSuppressWindow: 2 * time.Minute,
+		DirectAttemptTimeoutSuppressAfter:  3,
+		DirectAttemptTimeoutSuppressWindow: 2 * time.Minute,
+	})
+
+	nodeA, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-a",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-a",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node a: %v", err)
+	}
+	nodeB, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-b",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-b",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node b: %v", err)
+	}
+
+	attemptAt := time.Now().UTC().Add(-5 * time.Second)
+	if _, err := dataStore.UpdateHeartbeat(nodeA.Node.ID, nodeA.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "198.51.100.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:                nodeB.Node.ID,
+			ActiveKind:                "relay",
+			ReportedAt:                time.Now().UTC(),
+			LastDirectAttemptAt:       attemptAt,
+			LastDirectAttemptResult:   "timeout",
+			ConsecutiveDirectFailures: 3,
+		}},
+	}); err != nil {
+		t.Fatalf("heartbeat node a: %v", err)
+	}
+	resp, err := dataStore.UpdateHeartbeat(nodeB.Node.ID, nodeB.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "203.0.113.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:          nodeA.Node.ID,
+			ActiveKind:          "relay",
+			ReportedAt:          time.Now().UTC(),
+			LastDirectAttemptAt: attemptAt,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("heartbeat node b: %v", err)
+	}
+	if len(resp.DirectAttempts) != 0 {
+		t.Fatalf("expected suppression after repeated failures, got %#v", resp.DirectAttempts)
+	}
+
+	bootstrap, err := dataStore.GetBootstrap(nodeB.Node.ID, nodeB.NodeToken)
+	if err != nil {
+		t.Fatalf("get bootstrap for node b: %v", err)
+	}
+	if len(bootstrap.Peers) != 1 || bootstrap.Peers[0].ObservedConsecutiveDirectFailures != 3 {
+		t.Fatalf("expected observed failure budget in bootstrap peer, got %#v", bootstrap.Peers)
+	}
+}

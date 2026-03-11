@@ -151,6 +151,35 @@ func TestTransportHandshakeAndEncryptedFrameDelivery(t *testing.T) {
 	}
 }
 
+func TestRecordDirectAttemptResultTracksFailureBudget(t *testing.T) {
+	transport := &Transport{
+		peerStats: map[string]peerMetrics{},
+	}
+	attemptedAt := time.Now().UTC()
+
+	transport.recordDirectAttemptResult("node-b", "attempt-1", "relay_active", attemptedAt, "timeout")
+	transport.recordDirectAttemptResult("node-b", "attempt-2", "manual_recover", attemptedAt.Add(1*time.Second), "relay_kept")
+
+	report := transport.Snapshot()
+	if len(report.Peers) != 1 {
+		t.Fatalf("expected one peer in snapshot, got %#v", report.Peers)
+	}
+	if report.Peers[0].ConsecutiveDirectFailures != 2 {
+		t.Fatalf("expected consecutive direct failures to reach 2, got %#v", report.Peers[0])
+	}
+
+	successAt := attemptedAt.Add(2 * time.Second)
+	transport.recordDirectAttemptResult("node-b", "attempt-3", "manual_recover", successAt, "success")
+
+	report = transport.Snapshot()
+	if report.Peers[0].ConsecutiveDirectFailures != 0 {
+		t.Fatalf("expected success to reset consecutive failures, got %#v", report.Peers[0])
+	}
+	if !report.Peers[0].LastDirectSuccessAt.Equal(successAt) {
+		t.Fatalf("expected last direct success time %s, got %#v", successAt, report.Peers[0])
+	}
+}
+
 func TestTransportSendFailsWhenPeerKeyMismatch(t *testing.T) {
 	privateKeyA, publicKeyA, err := GenerateKeyPair()
 	if err != nil {

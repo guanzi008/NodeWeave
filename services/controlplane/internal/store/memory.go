@@ -364,6 +364,8 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 				peer.ObservedTransportReportedAt = transportState.ReportedAt
 				peer.ObservedLastDirectAttemptAt = transportState.LastDirectAttemptAt
 				peer.ObservedLastDirectAttemptResult = transportState.LastDirectAttemptResult
+				peer.ObservedLastDirectSuccessAt = transportState.LastDirectSuccessAt
+				peer.ObservedConsecutiveDirectFailures = transportState.ConsecutiveDirectFailures
 			}
 		}
 		peers = append(peers, peer)

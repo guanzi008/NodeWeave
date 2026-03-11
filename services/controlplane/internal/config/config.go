@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -34,6 +35,12 @@ type Config struct {
 	DirectAttemptManualRecoverAfter          time.Duration
 	DirectAttemptTimeoutManualRecoverAfter   time.Duration
 	DirectAttemptRelayKeptManualRecoverAfter time.Duration
+	DirectAttemptFailureSuppressAfter        int
+	DirectAttemptTimeoutSuppressAfter        int
+	DirectAttemptRelayKeptSuppressAfter      int
+	DirectAttemptFailureSuppressWindow       time.Duration
+	DirectAttemptTimeoutSuppressWindow       time.Duration
+	DirectAttemptRelayKeptSuppressWindow     time.Duration
 	RelayActiveAttemptLead                   time.Duration
 	RelayActiveAttemptWindow                 time.Duration
 	RelayActiveAttemptBurstInterval          time.Duration
@@ -45,6 +52,8 @@ type Config struct {
 func Load() Config {
 	directAttemptCooldown := getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_COOLDOWN", 10*time.Second)
 	directAttemptManualRecoverAfter := getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_MANUAL_RECOVER_AFTER", 30*time.Second)
+	directAttemptFailureSuppressAfter := getEnvInt("CONTROLPLANE_DIRECT_ATTEMPT_FAILURE_SUPPRESS_AFTER", 4)
+	directAttemptFailureSuppressWindow := getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_FAILURE_SUPPRESS_WINDOW", 2*time.Minute)
 
 	return Config{
 		Address:                                  getEnv("CONTROLPLANE_ADDRESS", ":8080"),
@@ -74,6 +83,12 @@ func Load() Config {
 		DirectAttemptManualRecoverAfter:          directAttemptManualRecoverAfter,
 		DirectAttemptTimeoutManualRecoverAfter:   getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_MANUAL_RECOVER_AFTER", directAttemptManualRecoverAfter),
 		DirectAttemptRelayKeptManualRecoverAfter: getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_MANUAL_RECOVER_AFTER", directAttemptManualRecoverAfter),
+		DirectAttemptFailureSuppressAfter:        directAttemptFailureSuppressAfter,
+		DirectAttemptTimeoutSuppressAfter:        getEnvInt("CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_SUPPRESS_AFTER", directAttemptFailureSuppressAfter),
+		DirectAttemptRelayKeptSuppressAfter:      getEnvInt("CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_SUPPRESS_AFTER", directAttemptFailureSuppressAfter),
+		DirectAttemptFailureSuppressWindow:       directAttemptFailureSuppressWindow,
+		DirectAttemptTimeoutSuppressWindow:       getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_SUPPRESS_WINDOW", directAttemptFailureSuppressWindow),
+		DirectAttemptRelayKeptSuppressWindow:     getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_SUPPRESS_WINDOW", directAttemptFailureSuppressWindow),
 		RelayActiveAttemptLead:                   getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD", 200*time.Millisecond),
 		RelayActiveAttemptWindow:                 getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW", 900*time.Millisecond),
 		RelayActiveAttemptBurstInterval:          getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL", 60*time.Millisecond),
@@ -123,6 +138,19 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 		duration, err := time.ParseDuration(value)
 		if err == nil {
 			return duration
+		}
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if value, ok := os.LookupEnv(key); ok {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return fallback
+		}
+		if parsed, err := strconv.Atoi(value); err == nil {
+			return parsed
 		}
 	}
 	return fallback

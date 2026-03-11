@@ -721,12 +721,14 @@ func peerTransportStatesFromReport(report secureudp.Report) []api.PeerTransportS
 	states := make([]api.PeerTransportState, 0, len(report.Peers))
 	for _, peer := range report.Peers {
 		state := api.PeerTransportState{
-			PeerNodeID:              peer.NodeID,
-			ActiveKind:              peer.ActiveKind,
-			ActiveAddress:           peer.ActiveAddress,
-			ReportedAt:              report.GeneratedAt,
-			LastDirectAttemptAt:     peer.LastDirectAttemptAt,
-			LastDirectAttemptResult: peer.LastDirectAttemptResult,
+			PeerNodeID:                peer.NodeID,
+			ActiveKind:                peer.ActiveKind,
+			ActiveAddress:             peer.ActiveAddress,
+			ReportedAt:                report.GeneratedAt,
+			LastDirectAttemptAt:       peer.LastDirectAttemptAt,
+			LastDirectAttemptResult:   peer.LastDirectAttemptResult,
+			LastDirectSuccessAt:       peer.LastDirectSuccessAt,
+			ConsecutiveDirectFailures: peer.ConsecutiveDirectFailures,
 		}
 		if state.PeerNodeID == "" {
 			continue

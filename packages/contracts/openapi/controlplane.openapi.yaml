@@ -185,6 +185,9 @@ components:
         reported_at:
           type: string
           format: date-time
+        last_direct_attempt_at:
+          type: string
+          format: date-time
         last_direct_attempt_result:
           type: string
     DirectAttemptInstruction:
@@ -250,6 +253,9 @@ components:
         observed_transport_address:
           type: string
         observed_transport_reported_at:
+          type: string
+          format: date-time
+        observed_last_direct_attempt_at:
           type: string
           format: date-time
         observed_last_direct_attempt_result:

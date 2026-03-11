@@ -362,6 +362,7 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 				peer.ObservedTransportKind = transportState.ActiveKind
 				peer.ObservedTransportAddress = transportState.ActiveAddress
 				peer.ObservedTransportReportedAt = transportState.ReportedAt
+				peer.ObservedLastDirectAttemptAt = transportState.LastDirectAttemptAt
 				peer.ObservedLastDirectAttemptResult = transportState.LastDirectAttemptResult
 			}
 		}
@@ -413,11 +414,12 @@ func (s *MemoryStore) pruneDirectAttemptsLocked(now time.Time) {
 }
 
 func (s *MemoryStore) scheduleDirectAttemptsLocked(now time.Time, nodeID string) {
+	policy := directAttemptPolicyFromConfig(s.cfg)
 	node, ok := s.nodes[nodeID]
-	if !ok || !isNodeOnline(node, now) {
+	if !ok || !isNodeOnlineWithPolicy(node, now, policy) {
 		return
 	}
-	nodeCandidates := freshDirectCandidateAddresses(node, now)
+	nodeCandidates := freshDirectCandidateAddressesWithPolicy(node, now, policy)
 	if len(nodeCandidates) == 0 {
 		return
 	}
@@ -427,10 +429,10 @@ func (s *MemoryStore) scheduleDirectAttemptsLocked(now time.Time, nodeID string)
 		if peer.ID == nodeID {
 			continue
 		}
-		if !isNodeOnline(peer, now) {
+		if !isNodeOnlineWithPolicy(peer, now, policy) {
 			continue
 		}
-		peerCandidates := freshDirectCandidateAddresses(peer, now)
+		peerCandidates := freshDirectCandidateAddressesWithPolicy(peer, now, policy)
 		if len(peerCandidates) == 0 {
 			continue
 		}
@@ -439,7 +441,7 @@ func (s *MemoryStore) scheduleDirectAttemptsLocked(now time.Time, nodeID string)
 			continue
 		}
 		peerTransportStates := s.peerTransports[peer.ID]
-		reason, schedule := directAttemptReason(nodeTransportStates[peer.ID], peerTransportStates[node.ID], now)
+		reason, schedule := directAttemptReasonWithPolicy(nodeTransportStates[peer.ID], peerTransportStates[node.ID], now, policy)
 		if !schedule {
 			continue
 		}
@@ -449,7 +451,7 @@ func (s *MemoryStore) scheduleDirectAttemptsLocked(now time.Time, nodeID string)
 			left, right = peer, node
 			leftCandidates, rightCandidates = peerCandidates, nodeCandidates
 		}
-		s.directAttempts[key] = newDirectAttemptPair(now, left, right, leftCandidates, rightCandidates, reason)
+		s.directAttempts[key] = newDirectAttemptPair(now, left, right, leftCandidates, rightCandidates, reason, policy)
 	}
 }
 

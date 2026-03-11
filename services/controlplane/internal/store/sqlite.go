@@ -731,6 +731,7 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 			peer.ObservedTransportKind = transportState.ActiveKind
 			peer.ObservedTransportAddress = transportState.ActiveAddress
 			peer.ObservedTransportReportedAt = transportState.ReportedAt
+			peer.ObservedLastDirectAttemptAt = transportState.LastDirectAttemptAt
 			peer.ObservedLastDirectAttemptResult = transportState.LastDirectAttemptResult
 		}
 		peers = append(peers, peer)
@@ -996,15 +997,16 @@ func (s *SQLiteStore) directAttemptsForNodeTx(tx *sql.Tx, nodeID string, now tim
 }
 
 func (s *SQLiteStore) scheduleDirectAttemptsTx(tx *sql.Tx, now time.Time, nodeID string) error {
+	policy := directAttemptPolicyFromConfig(s.cfg)
 	node, err := s.loadNodeTx(tx, nodeID)
 	if err != nil {
 		return err
 	}
-	if !isNodeOnline(node, now) {
+	if !isNodeOnlineWithPolicy(node, now, policy) {
 		return nil
 	}
 
-	nodeCandidates := freshDirectCandidateAddresses(node, now)
+	nodeCandidates := freshDirectCandidateAddressesWithPolicy(node, now, policy)
 	if len(nodeCandidates) == 0 {
 		return nil
 	}
@@ -1028,10 +1030,10 @@ func (s *SQLiteStore) scheduleDirectAttemptsTx(tx *sql.Tx, now time.Time, nodeID
 		if err != nil {
 			return err
 		}
-		if !isNodeOnline(peer, now) {
+		if !isNodeOnlineWithPolicy(peer, now, policy) {
 			continue
 		}
-		peerCandidates := freshDirectCandidateAddresses(peer, now)
+		peerCandidates := freshDirectCandidateAddressesWithPolicy(peer, now, policy)
 		if len(peerCandidates) == 0 {
 			continue
 		}
@@ -1047,7 +1049,7 @@ func (s *SQLiteStore) scheduleDirectAttemptsTx(tx *sql.Tx, now time.Time, nodeID
 		if err != nil {
 			return err
 		}
-		reason, schedule := directAttemptReason(nodeTransportStates[peer.ID], peerTransportStates[node.ID], now)
+		reason, schedule := directAttemptReasonWithPolicy(nodeTransportStates[peer.ID], peerTransportStates[node.ID], now, policy)
 		if !schedule {
 			continue
 		}
@@ -1057,7 +1059,7 @@ func (s *SQLiteStore) scheduleDirectAttemptsTx(tx *sql.Tx, now time.Time, nodeID
 			left, right = peer, node
 			leftCandidates, rightCandidates = peerCandidates, nodeCandidates
 		}
-		if err := s.insertDirectAttemptTx(tx, newDirectAttemptPair(now, left, right, leftCandidates, rightCandidates, reason)); err != nil {
+		if err := s.insertDirectAttemptTx(tx, newDirectAttemptPair(now, left, right, leftCandidates, rightCandidates, reason, policy)); err != nil {
 			return err
 		}
 	}

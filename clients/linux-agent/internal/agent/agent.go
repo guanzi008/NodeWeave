@@ -725,6 +725,7 @@ func peerTransportStatesFromReport(report secureudp.Report) []api.PeerTransportS
 			ActiveKind:              peer.ActiveKind,
 			ActiveAddress:           peer.ActiveAddress,
 			ReportedAt:              report.GeneratedAt,
+			LastDirectAttemptAt:     peer.LastDirectAttemptAt,
 			LastDirectAttemptResult: peer.LastDirectAttemptResult,
 		}
 		if state.PeerNodeID == "" {

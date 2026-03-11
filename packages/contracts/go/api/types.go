@@ -71,6 +71,7 @@ type PeerTransportState struct {
 	ActiveKind              string    `json:"active_kind,omitempty"`
 	ActiveAddress           string    `json:"active_address,omitempty"`
 	ReportedAt              time.Time `json:"reported_at,omitempty"`
+	LastDirectAttemptAt     time.Time `json:"last_direct_attempt_at,omitempty"`
 	LastDirectAttemptResult string    `json:"last_direct_attempt_result,omitempty"`
 }
 
@@ -108,6 +109,7 @@ type Peer struct {
 	ObservedTransportKind           string                `json:"observed_transport_kind,omitempty"`
 	ObservedTransportAddress        string                `json:"observed_transport_address,omitempty"`
 	ObservedTransportReportedAt     time.Time             `json:"observed_transport_reported_at,omitempty"`
+	ObservedLastDirectAttemptAt     time.Time             `json:"observed_last_direct_attempt_at,omitempty"`
 	ObservedLastDirectAttemptResult string                `json:"observed_last_direct_attempt_result,omitempty"`
 }
 

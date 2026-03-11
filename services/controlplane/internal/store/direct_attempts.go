@@ -8,19 +8,66 @@ import (
 
 	"nodeweave/packages/contracts/go/api"
 	"nodeweave/packages/runtime/go/session"
+	"nodeweave/services/controlplane/internal/config"
 )
 
 const (
-	nodeOnlineWindow         = 30 * time.Second
-	endpointFreshnessWindow  = 45 * time.Second
-	transportFreshnessWindow = 30 * time.Second
-	directAttemptCooldown    = 10 * time.Second
-	directAttemptLead        = 150 * time.Millisecond
-	directAttemptWindow      = 600 * time.Millisecond
-	directAttemptBurst       = 80 * time.Millisecond
-	directAttemptRetention   = 2 * time.Second
-	maxNATSamples            = 4
+	maxNATSamples = 4
 )
+
+type directAttemptPolicy struct {
+	NodeOnlineWindow                time.Duration
+	EndpointFreshnessWindow         time.Duration
+	TransportFreshnessWindow        time.Duration
+	DirectAttemptCooldown           time.Duration
+	DirectAttemptLead               time.Duration
+	DirectAttemptWindow             time.Duration
+	DirectAttemptBurstInterval      time.Duration
+	DirectAttemptRetention          time.Duration
+	DirectAttemptManualRecoverAfter time.Duration
+}
+
+func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
+	policy := directAttemptPolicy{
+		NodeOnlineWindow:                cfg.NodeOnlineWindow,
+		EndpointFreshnessWindow:         cfg.EndpointFreshnessWindow,
+		TransportFreshnessWindow:        cfg.TransportFreshnessWindow,
+		DirectAttemptCooldown:           cfg.DirectAttemptCooldown,
+		DirectAttemptLead:               cfg.DirectAttemptLead,
+		DirectAttemptWindow:             cfg.DirectAttemptWindow,
+		DirectAttemptBurstInterval:      cfg.DirectAttemptBurstInterval,
+		DirectAttemptRetention:          cfg.DirectAttemptRetention,
+		DirectAttemptManualRecoverAfter: cfg.DirectAttemptManualRecoverAfter,
+	}
+	if policy.NodeOnlineWindow <= 0 {
+		policy.NodeOnlineWindow = 30 * time.Second
+	}
+	if policy.EndpointFreshnessWindow <= 0 {
+		policy.EndpointFreshnessWindow = 45 * time.Second
+	}
+	if policy.TransportFreshnessWindow <= 0 {
+		policy.TransportFreshnessWindow = 30 * time.Second
+	}
+	if policy.DirectAttemptCooldown <= 0 {
+		policy.DirectAttemptCooldown = 10 * time.Second
+	}
+	if policy.DirectAttemptLead <= 0 {
+		policy.DirectAttemptLead = 150 * time.Millisecond
+	}
+	if policy.DirectAttemptWindow <= 0 {
+		policy.DirectAttemptWindow = 600 * time.Millisecond
+	}
+	if policy.DirectAttemptBurstInterval <= 0 {
+		policy.DirectAttemptBurstInterval = 80 * time.Millisecond
+	}
+	if policy.DirectAttemptRetention <= 0 {
+		policy.DirectAttemptRetention = 2 * time.Second
+	}
+	if policy.DirectAttemptManualRecoverAfter <= 0 {
+		policy.DirectAttemptManualRecoverAfter = 30 * time.Second
+	}
+	return policy
+}
 
 type directAttemptPair struct {
 	AttemptID       string
@@ -136,17 +183,25 @@ func normalizeMappingBehavior(value string) string {
 }
 
 func isNodeOnline(node api.Node, now time.Time) bool {
+	return isNodeOnlineWithPolicy(node, now, directAttemptPolicyFromConfig(config.Config{}))
+}
+
+func isNodeOnlineWithPolicy(node api.Node, now time.Time, policy directAttemptPolicy) bool {
 	if strings.ToLower(strings.TrimSpace(node.Status)) != "online" {
 		return false
 	}
 	if node.LastSeenAt.IsZero() {
 		return false
 	}
-	return now.Sub(node.LastSeenAt.UTC()) <= nodeOnlineWindow
+	return now.Sub(node.LastSeenAt.UTC()) <= policy.NodeOnlineWindow
 }
 
 func freshDirectCandidateAddresses(node api.Node, now time.Time) []string {
-	candidates := session.FreshDirectCandidates(now, node.Endpoints, node.EndpointRecords, endpointFreshnessWindow)
+	return freshDirectCandidateAddressesWithPolicy(node, now, directAttemptPolicyFromConfig(config.Config{}))
+}
+
+func freshDirectCandidateAddressesWithPolicy(node api.Node, now time.Time, policy directAttemptPolicy) []string {
+	candidates := session.FreshDirectCandidates(now, node.Endpoints, node.EndpointRecords, policy.EndpointFreshnessWindow)
 	addresses := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		if strings.ToLower(strings.TrimSpace(candidate.Kind)) != "direct" {
@@ -185,6 +240,11 @@ func sanitizePeerTransportStates(now time.Time, states []api.PeerTransportState)
 		} else {
 			state.ReportedAt = state.ReportedAt.UTC()
 		}
+		if state.LastDirectAttemptAt.IsZero() {
+			state.LastDirectAttemptAt = state.ReportedAt
+		} else {
+			state.LastDirectAttemptAt = state.LastDirectAttemptAt.UTC()
+		}
 		existing, ok := byPeer[peerNodeID]
 		if !ok || state.ReportedAt.After(existing.ReportedAt) {
 			byPeer[peerNodeID] = state
@@ -209,37 +269,75 @@ func peerTransportStateLookup(states []api.PeerTransportState) map[string]api.Pe
 }
 
 func transportStateFresh(state api.PeerTransportState, now time.Time) bool {
+	return transportStateFreshWithPolicy(state, now, directAttemptPolicyFromConfig(config.Config{}))
+}
+
+func transportStateFreshWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
 	if state.ReportedAt.IsZero() {
 		return false
 	}
-	return now.Sub(state.ReportedAt.UTC()) <= transportFreshnessWindow
+	return now.Sub(state.ReportedAt.UTC()) <= policy.TransportFreshnessWindow
 }
 
 func directAttemptCoolingDown(state api.PeerTransportState, now time.Time) bool {
-	if !transportStateFresh(state, now) {
+	return directAttemptCoolingDownWithPolicy(state, now, directAttemptPolicyFromConfig(config.Config{}))
+}
+
+func directAttemptCoolingDownWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
+	if !transportStateFreshWithPolicy(state, now, policy) {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(state.LastDirectAttemptResult)) {
 	case "timeout", "relay_kept":
-		return now.Sub(state.ReportedAt.UTC()) < directAttemptCooldown
+		attemptAt := state.LastDirectAttemptAt.UTC()
+		if attemptAt.IsZero() {
+			attemptAt = state.ReportedAt.UTC()
+		}
+		return now.Sub(attemptAt) < policy.DirectAttemptCooldown
 	default:
 		return false
 	}
 }
 
 func directAttemptReason(selfState, peerState api.PeerTransportState, now time.Time) (string, bool) {
-	selfFresh := transportStateFresh(selfState, now)
-	peerFresh := transportStateFresh(peerState, now)
+	return directAttemptReasonWithPolicy(selfState, peerState, now, directAttemptPolicyFromConfig(config.Config{}))
+}
+
+func directAttemptReasonWithPolicy(selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy) (string, bool) {
+	selfFresh := transportStateFreshWithPolicy(selfState, now, policy)
+	peerFresh := transportStateFreshWithPolicy(peerState, now, policy)
 	if selfFresh && peerFresh && selfState.ActiveKind == "direct" && peerState.ActiveKind == "direct" {
 		return "", false
 	}
-	if directAttemptCoolingDown(selfState, now) || directAttemptCoolingDown(peerState, now) {
+	if directAttemptCoolingDownWithPolicy(selfState, now, policy) || directAttemptCoolingDownWithPolicy(peerState, now, policy) {
 		return "", false
 	}
 	if (selfFresh && selfState.ActiveKind == "relay") || (peerFresh && peerState.ActiveKind == "relay") {
+		if shouldUseManualRecover(selfState, now, policy) || shouldUseManualRecover(peerState, now, policy) {
+			return "manual_recover", true
+		}
 		return "relay_active", true
 	}
 	return "fresh_endpoints", true
+}
+
+func shouldUseManualRecover(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
+	if !transportStateFreshWithPolicy(state, now, policy) {
+		return false
+	}
+	if strings.ToLower(strings.TrimSpace(state.ActiveKind)) != "relay" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(state.LastDirectAttemptResult)) {
+	case "timeout", "relay_kept":
+	default:
+		return false
+	}
+	attemptAt := state.LastDirectAttemptAt.UTC()
+	if attemptAt.IsZero() {
+		attemptAt = state.ReportedAt.UTC()
+	}
+	return now.Sub(attemptAt) >= policy.DirectAttemptManualRecoverAfter
 }
 
 func dedupeStrings(values []string) []string {
@@ -259,13 +357,13 @@ func dedupeStrings(values []string) []string {
 	return result
 }
 
-func newDirectAttemptPair(now time.Time, nodeA api.Node, nodeB api.Node, nodeACandidates, nodeBCandidates []string, reason string) directAttemptPair {
+func newDirectAttemptPair(now time.Time, nodeA api.Node, nodeB api.Node, nodeACandidates, nodeBCandidates []string, reason string, policy directAttemptPolicy) directAttemptPair {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	executeAt := now.Add(directAttemptLead)
-	window := directAttemptWindow
-	burstInterval := directAttemptBurst
+	executeAt := now.Add(policy.DirectAttemptLead)
+	window := policy.DirectAttemptWindow
+	burstInterval := policy.DirectAttemptBurstInterval
 	attemptID := fmt.Sprintf(
 		"attempt-%s-%s-%d",
 		nodeA.ID,
@@ -282,7 +380,7 @@ func newDirectAttemptPair(now time.Time, nodeA api.Node, nodeB api.Node, nodeACa
 		Window:          window,
 		BurstInterval:   burstInterval,
 		Reason:          strings.TrimSpace(reason),
-		ExpiresAt:       executeAt.Add(window).Add(directAttemptRetention),
+		ExpiresAt:       executeAt.Add(window).Add(policy.DirectAttemptRetention),
 	}
 }
 

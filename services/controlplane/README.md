@@ -42,12 +42,19 @@ go run ./cmd/controlplane
 - `CONTROLPLANE_DIRECT_ATTEMPT_BURST_INTERVAL=80ms`
 - `CONTROLPLANE_DIRECT_ATTEMPT_RETENTION=2s`
 - `CONTROLPLANE_DIRECT_ATTEMPT_MANUAL_RECOVER_AFTER=30s`
+- `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD=200ms`
+- `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW=900ms`
+- `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL=60ms`
+- `CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_LEAD=250ms`
+- `CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_WINDOW=1500ms`
+- `CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_BURST_INTERVAL=50ms`
 
 当前默认策略：
 
 - relay 活跃链路优先触发 `relay_active`
 - direct timeout / relay_kept 后进入冷却窗口，避免连续打洞
 - 冷却结束后，如果 relay 仍持续活跃，则后续尝试会标记成 `manual_recover`
+- `relay_active` 和 `manual_recover` 可以使用独立的 lead/window/burst profile，不必和 `fresh_endpoints` 共用一套时间窗
 
 ## 测试
 

@@ -16,28 +16,40 @@ const (
 )
 
 type directAttemptPolicy struct {
-	NodeOnlineWindow                time.Duration
-	EndpointFreshnessWindow         time.Duration
-	TransportFreshnessWindow        time.Duration
-	DirectAttemptCooldown           time.Duration
-	DirectAttemptLead               time.Duration
-	DirectAttemptWindow             time.Duration
-	DirectAttemptBurstInterval      time.Duration
-	DirectAttemptRetention          time.Duration
-	DirectAttemptManualRecoverAfter time.Duration
+	NodeOnlineWindow                  time.Duration
+	EndpointFreshnessWindow           time.Duration
+	TransportFreshnessWindow          time.Duration
+	DirectAttemptCooldown             time.Duration
+	DirectAttemptLead                 time.Duration
+	DirectAttemptWindow               time.Duration
+	DirectAttemptBurstInterval        time.Duration
+	DirectAttemptRetention            time.Duration
+	DirectAttemptManualRecoverAfter   time.Duration
+	RelayActiveAttemptLead            time.Duration
+	RelayActiveAttemptWindow          time.Duration
+	RelayActiveAttemptBurstInterval   time.Duration
+	ManualRecoverAttemptLead          time.Duration
+	ManualRecoverAttemptWindow        time.Duration
+	ManualRecoverAttemptBurstInterval time.Duration
 }
 
 func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	policy := directAttemptPolicy{
-		NodeOnlineWindow:                cfg.NodeOnlineWindow,
-		EndpointFreshnessWindow:         cfg.EndpointFreshnessWindow,
-		TransportFreshnessWindow:        cfg.TransportFreshnessWindow,
-		DirectAttemptCooldown:           cfg.DirectAttemptCooldown,
-		DirectAttemptLead:               cfg.DirectAttemptLead,
-		DirectAttemptWindow:             cfg.DirectAttemptWindow,
-		DirectAttemptBurstInterval:      cfg.DirectAttemptBurstInterval,
-		DirectAttemptRetention:          cfg.DirectAttemptRetention,
-		DirectAttemptManualRecoverAfter: cfg.DirectAttemptManualRecoverAfter,
+		NodeOnlineWindow:                  cfg.NodeOnlineWindow,
+		EndpointFreshnessWindow:           cfg.EndpointFreshnessWindow,
+		TransportFreshnessWindow:          cfg.TransportFreshnessWindow,
+		DirectAttemptCooldown:             cfg.DirectAttemptCooldown,
+		DirectAttemptLead:                 cfg.DirectAttemptLead,
+		DirectAttemptWindow:               cfg.DirectAttemptWindow,
+		DirectAttemptBurstInterval:        cfg.DirectAttemptBurstInterval,
+		DirectAttemptRetention:            cfg.DirectAttemptRetention,
+		DirectAttemptManualRecoverAfter:   cfg.DirectAttemptManualRecoverAfter,
+		RelayActiveAttemptLead:            cfg.RelayActiveAttemptLead,
+		RelayActiveAttemptWindow:          cfg.RelayActiveAttemptWindow,
+		RelayActiveAttemptBurstInterval:   cfg.RelayActiveAttemptBurstInterval,
+		ManualRecoverAttemptLead:          cfg.ManualRecoverAttemptLead,
+		ManualRecoverAttemptWindow:        cfg.ManualRecoverAttemptWindow,
+		ManualRecoverAttemptBurstInterval: cfg.ManualRecoverAttemptBurstInterval,
 	}
 	if policy.NodeOnlineWindow <= 0 {
 		policy.NodeOnlineWindow = 30 * time.Second
@@ -66,7 +78,54 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	if policy.DirectAttemptManualRecoverAfter <= 0 {
 		policy.DirectAttemptManualRecoverAfter = 30 * time.Second
 	}
+	if policy.RelayActiveAttemptLead <= 0 {
+		policy.RelayActiveAttemptLead = policy.DirectAttemptLead
+	}
+	if policy.RelayActiveAttemptWindow <= 0 {
+		policy.RelayActiveAttemptWindow = policy.DirectAttemptWindow
+	}
+	if policy.RelayActiveAttemptBurstInterval <= 0 {
+		policy.RelayActiveAttemptBurstInterval = policy.DirectAttemptBurstInterval
+	}
+	if policy.ManualRecoverAttemptLead <= 0 {
+		policy.ManualRecoverAttemptLead = policy.DirectAttemptLead
+	}
+	if policy.ManualRecoverAttemptWindow <= 0 {
+		policy.ManualRecoverAttemptWindow = policy.DirectAttemptWindow
+	}
+	if policy.ManualRecoverAttemptBurstInterval <= 0 {
+		policy.ManualRecoverAttemptBurstInterval = policy.DirectAttemptBurstInterval
+	}
 	return policy
+}
+
+type directAttemptProfile struct {
+	Lead          time.Duration
+	Window        time.Duration
+	BurstInterval time.Duration
+}
+
+func (p directAttemptPolicy) profileForReason(reason string) directAttemptProfile {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "relay_active":
+		return directAttemptProfile{
+			Lead:          p.RelayActiveAttemptLead,
+			Window:        p.RelayActiveAttemptWindow,
+			BurstInterval: p.RelayActiveAttemptBurstInterval,
+		}
+	case "manual_recover":
+		return directAttemptProfile{
+			Lead:          p.ManualRecoverAttemptLead,
+			Window:        p.ManualRecoverAttemptWindow,
+			BurstInterval: p.ManualRecoverAttemptBurstInterval,
+		}
+	default:
+		return directAttemptProfile{
+			Lead:          p.DirectAttemptLead,
+			Window:        p.DirectAttemptWindow,
+			BurstInterval: p.DirectAttemptBurstInterval,
+		}
+	}
 }
 
 type directAttemptPair struct {
@@ -361,9 +420,10 @@ func newDirectAttemptPair(now time.Time, nodeA api.Node, nodeB api.Node, nodeACa
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	executeAt := now.Add(policy.DirectAttemptLead)
-	window := policy.DirectAttemptWindow
-	burstInterval := policy.DirectAttemptBurstInterval
+	profile := policy.profileForReason(reason)
+	executeAt := now.Add(profile.Lead)
+	window := profile.Window
+	burstInterval := profile.BurstInterval
 	attemptID := fmt.Sprintf(
 		"attempt-%s-%s-%d",
 		nodeA.ID,

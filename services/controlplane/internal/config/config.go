@@ -25,6 +25,8 @@ type Config struct {
 	EndpointFreshnessWindow           time.Duration
 	TransportFreshnessWindow          time.Duration
 	DirectAttemptCooldown             time.Duration
+	DirectAttemptTimeoutCooldown      time.Duration
+	DirectAttemptRelayKeptCooldown    time.Duration
 	DirectAttemptLead                 time.Duration
 	DirectAttemptWindow               time.Duration
 	DirectAttemptBurstInterval        time.Duration
@@ -39,6 +41,8 @@ type Config struct {
 }
 
 func Load() Config {
+	directAttemptCooldown := getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_COOLDOWN", 10*time.Second)
+
 	return Config{
 		Address:                           getEnv("CONTROLPLANE_ADDRESS", ":8080"),
 		StorageDriver:                     getEnv("CONTROLPLANE_STORAGE_DRIVER", "sqlite"),
@@ -57,7 +61,9 @@ func Load() Config {
 		NodeOnlineWindow:                  getEnvDuration("CONTROLPLANE_NODE_ONLINE_WINDOW", 30*time.Second),
 		EndpointFreshnessWindow:           getEnvDuration("CONTROLPLANE_ENDPOINT_FRESHNESS_WINDOW", 45*time.Second),
 		TransportFreshnessWindow:          getEnvDuration("CONTROLPLANE_TRANSPORT_FRESHNESS_WINDOW", 30*time.Second),
-		DirectAttemptCooldown:             getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_COOLDOWN", 10*time.Second),
+		DirectAttemptCooldown:             directAttemptCooldown,
+		DirectAttemptTimeoutCooldown:      getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_COOLDOWN", directAttemptCooldown),
+		DirectAttemptRelayKeptCooldown:    getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_COOLDOWN", directAttemptCooldown),
 		DirectAttemptLead:                 getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_LEAD", 150*time.Millisecond),
 		DirectAttemptWindow:               getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_WINDOW", 600*time.Millisecond),
 		DirectAttemptBurstInterval:        getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_BURST_INTERVAL", 80*time.Millisecond),

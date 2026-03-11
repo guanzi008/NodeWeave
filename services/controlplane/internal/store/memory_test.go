@@ -503,3 +503,71 @@ func TestMemoryStoreCooldownSkipsImmediateRetryAfterTimeout(t *testing.T) {
 		t.Fatalf("expected timeout cooldown to suppress retry, got %#v", resp.DirectAttempts)
 	}
 }
+
+func TestMemoryStoreUsesRelayKeptCooldownOverride(t *testing.T) {
+	dataStore := NewMemoryStore(config.Config{
+		AdminEmail:                     "admin@example.com",
+		AdminPassword:                  "dev-password",
+		AdminToken:                     "dev-admin-token",
+		RegistrationToken:              "dev-register-token",
+		DNSDomain:                      "internal.net",
+		DirectAttemptCooldown:          10 * time.Second,
+		DirectAttemptTimeoutCooldown:   12 * time.Second,
+		DirectAttemptRelayKeptCooldown: 2 * time.Second,
+	})
+
+	nodeA, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-a",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-a",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node a: %v", err)
+	}
+	nodeB, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-b",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-b",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node b: %v", err)
+	}
+
+	attemptAt := time.Now().UTC().Add(-5 * time.Second)
+	if _, err := dataStore.UpdateHeartbeat(nodeA.Node.ID, nodeA.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "198.51.100.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:              nodeB.Node.ID,
+			ActiveKind:              "relay",
+			ReportedAt:              time.Now().UTC(),
+			LastDirectAttemptAt:     attemptAt,
+			LastDirectAttemptResult: "relay_kept",
+		}},
+	}); err != nil {
+		t.Fatalf("heartbeat node a: %v", err)
+	}
+	resp, err := dataStore.UpdateHeartbeat(nodeB.Node.ID, nodeB.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "203.0.113.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:          nodeA.Node.ID,
+			ActiveKind:          "relay",
+			ReportedAt:          time.Now().UTC(),
+			LastDirectAttemptAt: attemptAt,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("heartbeat node b: %v", err)
+	}
+	if len(resp.DirectAttempts) == 0 {
+		t.Fatal("expected relay_kept cooldown override to allow a new direct attempt")
+	}
+	if resp.DirectAttempts[0].Reason != "relay_active" && resp.DirectAttempts[0].Reason != "manual_recover" {
+		t.Fatalf("expected relay-driven attempt after relay_kept cooldown expiry, got %#v", resp.DirectAttempts)
+	}
+}

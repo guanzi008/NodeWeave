@@ -81,7 +81,7 @@ go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.js
 - heartbeat 也会上报每个 peer 的当前 transport 摘要，包括 `active_kind`、`active_address` 和最近一次 direct attempt 结果
 - 如果 heartbeat 响应里的 `bootstrap_version` 比本地新，agent 会立即拉取新的 bootstrap、重编 runtime 并重载 dataplane
 - 如果 heartbeat 响应里带有 `direct_attempts`，agent 会在本地短期调度队列里按 `execute_at/window/burst_interval` 执行 coordinated direct burst；控制面会优先把 relay 活跃链路下发为 `relay_active`
-- 如果最近一次 direct attempt 结果已经上报为 `timeout` 或 `relay_kept`，控制面会进入短暂冷却窗口，避免 agent 被连续打洞指令刷屏
+- 如果最近一次 direct attempt 结果已经上报为 `timeout` 或 `relay_kept`，控制面会进入短暂冷却窗口，避免 agent 被连续打洞指令刷屏；这两个结果现在可以配置不同的 cooldown
 - 冷却结束后如果 relay 仍持续活跃，控制面下发的后续恢复指令会标记为 `manual_recover`，并可使用比普通 `fresh_endpoints` 更激进的独立时间窗
 - 最新 STUN 结果会写入 `stun_report_path`
 - `stun-status` 可查看各个 server 的可达性、RTT 和当前选中的 reflexive address

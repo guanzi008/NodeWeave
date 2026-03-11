@@ -20,6 +20,8 @@ type directAttemptPolicy struct {
 	EndpointFreshnessWindow           time.Duration
 	TransportFreshnessWindow          time.Duration
 	DirectAttemptCooldown             time.Duration
+	DirectAttemptTimeoutCooldown      time.Duration
+	DirectAttemptRelayKeptCooldown    time.Duration
 	DirectAttemptLead                 time.Duration
 	DirectAttemptWindow               time.Duration
 	DirectAttemptBurstInterval        time.Duration
@@ -39,6 +41,8 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 		EndpointFreshnessWindow:           cfg.EndpointFreshnessWindow,
 		TransportFreshnessWindow:          cfg.TransportFreshnessWindow,
 		DirectAttemptCooldown:             cfg.DirectAttemptCooldown,
+		DirectAttemptTimeoutCooldown:      cfg.DirectAttemptTimeoutCooldown,
+		DirectAttemptRelayKeptCooldown:    cfg.DirectAttemptRelayKeptCooldown,
 		DirectAttemptLead:                 cfg.DirectAttemptLead,
 		DirectAttemptWindow:               cfg.DirectAttemptWindow,
 		DirectAttemptBurstInterval:        cfg.DirectAttemptBurstInterval,
@@ -62,6 +66,12 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	}
 	if policy.DirectAttemptCooldown <= 0 {
 		policy.DirectAttemptCooldown = 10 * time.Second
+	}
+	if policy.DirectAttemptTimeoutCooldown <= 0 {
+		policy.DirectAttemptTimeoutCooldown = policy.DirectAttemptCooldown
+	}
+	if policy.DirectAttemptRelayKeptCooldown <= 0 {
+		policy.DirectAttemptRelayKeptCooldown = policy.DirectAttemptCooldown
 	}
 	if policy.DirectAttemptLead <= 0 {
 		policy.DirectAttemptLead = 150 * time.Millisecond
@@ -346,16 +356,15 @@ func directAttemptCoolingDownWithPolicy(state api.PeerTransportState, now time.T
 	if !transportStateFreshWithPolicy(state, now, policy) {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(state.LastDirectAttemptResult)) {
-	case "timeout", "relay_kept":
-		attemptAt := state.LastDirectAttemptAt.UTC()
-		if attemptAt.IsZero() {
-			attemptAt = state.ReportedAt.UTC()
-		}
-		return now.Sub(attemptAt) < policy.DirectAttemptCooldown
-	default:
+	cooldown := policy.cooldownForResult(state.LastDirectAttemptResult)
+	if cooldown <= 0 {
 		return false
 	}
+	attemptAt := state.LastDirectAttemptAt.UTC()
+	if attemptAt.IsZero() {
+		attemptAt = state.ReportedAt.UTC()
+	}
+	return now.Sub(attemptAt) < cooldown
 }
 
 func directAttemptReason(selfState, peerState api.PeerTransportState, now time.Time) (string, bool) {
@@ -397,6 +406,23 @@ func shouldUseManualRecover(state api.PeerTransportState, now time.Time, policy 
 		attemptAt = state.ReportedAt.UTC()
 	}
 	return now.Sub(attemptAt) >= policy.DirectAttemptManualRecoverAfter
+}
+
+func (p directAttemptPolicy) cooldownForResult(result string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "timeout":
+		if p.DirectAttemptTimeoutCooldown > 0 {
+			return p.DirectAttemptTimeoutCooldown
+		}
+		return p.DirectAttemptCooldown
+	case "relay_kept":
+		if p.DirectAttemptRelayKeptCooldown > 0 {
+			return p.DirectAttemptRelayKeptCooldown
+		}
+		return p.DirectAttemptCooldown
+	default:
+		return 0
+	}
 }
 
 func dedupeStrings(values []string) []string {

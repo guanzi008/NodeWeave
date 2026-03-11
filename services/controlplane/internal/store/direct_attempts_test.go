@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"nodeweave/packages/contracts/go/api"
+	"nodeweave/services/controlplane/internal/config"
 )
 
 func TestDirectAttemptReasonUsesManualRecoverAfterCooldown(t *testing.T) {
@@ -70,6 +71,48 @@ func TestDirectAttemptReasonUsesRelayActiveBeforeManualRecover(t *testing.T) {
 	}, now, policy)
 	if !schedule || reason != "relay_active" {
 		t.Fatalf("expected relay_active before manual recovery criteria, got reason=%q schedule=%v", reason, schedule)
+	}
+}
+
+func TestDirectAttemptCoolingDownUsesResultSpecificCooldowns(t *testing.T) {
+	now := time.Now().UTC()
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:       30 * time.Second,
+		DirectAttemptCooldown:          10 * time.Second,
+		DirectAttemptTimeoutCooldown:   15 * time.Second,
+		DirectAttemptRelayKeptCooldown: 3 * time.Second,
+	}
+
+	timeoutCooling := directAttemptCoolingDownWithPolicy(api.PeerTransportState{
+		ActiveKind:              "relay",
+		ReportedAt:              now,
+		LastDirectAttemptAt:     now.Add(-6 * time.Second),
+		LastDirectAttemptResult: "timeout",
+	}, now, policy)
+	if !timeoutCooling {
+		t.Fatal("expected timeout result to remain in cooldown")
+	}
+
+	relayKeptCooling := directAttemptCoolingDownWithPolicy(api.PeerTransportState{
+		ActiveKind:              "relay",
+		ReportedAt:              now,
+		LastDirectAttemptAt:     now.Add(-6 * time.Second),
+		LastDirectAttemptResult: "relay_kept",
+	}, now, policy)
+	if relayKeptCooling {
+		t.Fatal("expected relay_kept cooldown to expire sooner than timeout")
+	}
+}
+
+func TestDirectAttemptPolicyDefaultsResultCooldownsToBase(t *testing.T) {
+	policy := directAttemptPolicyFromConfig(config.Config{
+		DirectAttemptCooldown: 7 * time.Second,
+	})
+	if policy.DirectAttemptTimeoutCooldown != 7*time.Second {
+		t.Fatalf("expected timeout cooldown to fall back to base value, got %s", policy.DirectAttemptTimeoutCooldown)
+	}
+	if policy.DirectAttemptRelayKeptCooldown != 7*time.Second {
+		t.Fatalf("expected relay_kept cooldown to fall back to base value, got %s", policy.DirectAttemptRelayKeptCooldown)
 	}
 }
 

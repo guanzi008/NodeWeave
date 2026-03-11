@@ -1,0 +1,26 @@
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: services/relay/Dockerfile
+    ports:
+      - "3478:3478/udp"
+    environment:
+      RELAY_ADDRESS: ":3478"
+      RELAY_MAPPING_TTL: "2m"
+    restart: unless-stopped
+
+  controlplane:
+    build:
+      context: ../..
+      dockerfile: services/controlplane/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../../services/controlplane/configs/controlplane.env.example
+    environment:
+      CONTROLPLANE_SQLITE_PATH: /data/controlplane.db
+      CONTROLPLANE_RELAYS: relay:3478
+    volumes:
+      - ../../data:/data
+    restart: unless-stopped

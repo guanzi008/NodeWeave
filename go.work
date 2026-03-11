@@ -1,0 +1,10 @@
+go 1.26.1
+
+use (
+	./clients/linux-agent
+	./clients/linux-cli
+	./packages/contracts/go
+	./packages/runtime/go
+	./services/controlplane
+	./services/relay
+)

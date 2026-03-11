@@ -1,0 +1,9 @@
+bin/
+dist/
+coverage.out
+.codex-team-runs/
+scripts/__pycache__/
+*.db
+*.sqlite
+*.sqlite3
+*.log

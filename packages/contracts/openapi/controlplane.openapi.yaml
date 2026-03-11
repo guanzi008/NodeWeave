@@ -1,0 +1,290 @@
+openapi: 3.0.3
+info:
+  title: NodeWeave Control Plane API
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/login:
+    post:
+      summary: Login as platform admin
+      responses:
+        "200":
+          description: Login response
+  /api/v1/devices/register:
+    post:
+      summary: Register a device and node
+      responses:
+        "201":
+          description: Registration response
+  /api/v1/nodes:
+    get:
+      summary: List nodes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Node list
+  /api/v1/nodes/{id}/bootstrap:
+    get:
+      summary: Fetch node bootstrap configuration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Bootstrap configuration
+  /api/v1/nodes/{id}/heartbeat:
+    post:
+      summary: Update node heartbeat
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeartbeatRequest"
+      responses:
+        "200":
+          description: Heartbeat accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartbeatResponse"
+  /api/v1/routes:
+    get:
+      summary: List routes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Route list
+    post:
+      summary: Create route
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created route
+  /api/v1/dns/zones:
+    get:
+      summary: List internal DNS zones
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: DNS zone list
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    EndpointObservation:
+      type: object
+      required:
+        - address
+      properties:
+        address:
+          type: string
+        source:
+          type: string
+          description: static, listener, stun, heartbeat
+        observed_at:
+          type: string
+          format: date-time
+    Node:
+      type: object
+      properties:
+        id:
+          type: string
+        device_id:
+          type: string
+        overlay_ip:
+          type: string
+        public_key:
+          type: string
+        relay_region:
+          type: string
+        status:
+          type: string
+        endpoints:
+          type: array
+          items:
+            type: string
+        endpoint_records:
+          type: array
+          items:
+            $ref: "#/components/schemas/EndpointObservation"
+        last_seen_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    NATSample:
+      type: object
+      properties:
+        server:
+          type: string
+        status:
+          type: string
+        rtt_millis:
+          type: integer
+          format: int64
+        reflexive_address:
+          type: string
+        error:
+          type: string
+    NATReport:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        mapping_behavior:
+          type: string
+          enum: [unknown, stable_port, varying_port]
+        sample_count:
+          type: integer
+        selected_reflexive_address:
+          type: string
+        reachable:
+          type: boolean
+        samples:
+          type: array
+          items:
+            $ref: "#/components/schemas/NATSample"
+    PeerTransportState:
+      type: object
+      properties:
+        peer_node_id:
+          type: string
+        active_kind:
+          type: string
+        active_address:
+          type: string
+        reported_at:
+          type: string
+          format: date-time
+        last_direct_attempt_result:
+          type: string
+    DirectAttemptInstruction:
+      type: object
+      properties:
+        attempt_id:
+          type: string
+        peer_node_id:
+          type: string
+        execute_at:
+          type: string
+          format: date-time
+        window:
+          type: integer
+          description: milliseconds
+        burst_interval:
+          type: integer
+          description: milliseconds
+        candidates:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+    Peer:
+      type: object
+      properties:
+        node_id:
+          type: string
+        overlay_ip:
+          type: string
+        public_key:
+          type: string
+        endpoints:
+          type: array
+          items:
+            type: string
+        endpoint_records:
+          type: array
+          items:
+            $ref: "#/components/schemas/EndpointObservation"
+        relay_region:
+          type: string
+        allowed_ips:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        last_seen_at:
+          type: string
+          format: date-time
+        nat_mapping_behavior:
+          type: string
+          enum: [unknown, stable_port, varying_port]
+        nat_reachable:
+          type: boolean
+        nat_reported_at:
+          type: string
+          format: date-time
+        observed_transport_kind:
+          type: string
+        observed_transport_address:
+          type: string
+        observed_transport_reported_at:
+          type: string
+          format: date-time
+        observed_last_direct_attempt_result:
+          type: string
+    HeartbeatRequest:
+      type: object
+      properties:
+        endpoints:
+          type: array
+          items:
+            type: string
+        endpoint_records:
+          type: array
+          items:
+            $ref: "#/components/schemas/EndpointObservation"
+        relay_region:
+          type: string
+        status:
+          type: string
+        public_key:
+          type: string
+        nat_report:
+          $ref: "#/components/schemas/NATReport"
+        peer_transport_states:
+          type: array
+          items:
+            $ref: "#/components/schemas/PeerTransportState"
+    HeartbeatResponse:
+      type: object
+      properties:
+        node:
+          $ref: "#/components/schemas/Node"
+        bootstrap_version:
+          type: integer
+        direct_attempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DirectAttemptInstruction"

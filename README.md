@@ -74,6 +74,7 @@ go run ./clients/linux-agent/cmd/linux-agent session-report --config ~/.config/n
 go run ./clients/linux-agent/cmd/linux-agent dataplane-status --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/linux-agent/cmd/linux-agent transport-status --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/linux-agent/cmd/linux-agent direct-attempt-status --config ~/.config/nodeweave/linux-agent.json
+go run ./clients/linux-agent/cmd/linux-agent direct-attempt-report --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.json
 ```
 
@@ -116,6 +117,7 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - `linux-agent` 会消费控制面返回的 `direct_attempts`，到点调用显式 `ExecuteDirectAttempt(...)`，失败时保持现有 relay 活跃路径
 - `linux-agent` 会把未执行完的 `direct_attempts` 持久化到本地；dataplane 未就绪或 agent 重启后，只要 attempt 还没过期，就会在 secure-udp transport 恢复时继续调度
 - `linux-agent direct-attempt-status` 可直接查看这些仍在本地排队的 coordinated direct attempts
+- `linux-agent direct-attempt-report` 会保留最近一批 attempt 的生命周期和等待原因，便于判断它是卡在 transport 不可用、正常排程、执行中，还是已经 timeout / relay_kept / success / expired
 - `linux-agent` 后台 `direct_warmup_interval` 预热现在也会遵守 controlplane 返回的 `peer_recovery_states`，在 `next_probe_at` / `probe_refill_at` 之前暂停本地 warmup
 - heartbeat 把 recovery state 更新到本地后，后台 warmup 会立即重算，不必等上一个 sleep 周期结束
 - `linux-agent` 会在后台对 direct candidate 主动发起 secure-udp 握手预热，并根据 transport report 暴露的 `next_direct_retry_at` 精准安排下一轮恢复尝试，减少等待真实流量才建链的延迟

@@ -15,6 +15,7 @@
   "session_report_path": "/var/lib/nodeweave/linux-agent/session-report.json",
   "dataplane_path": "/var/lib/nodeweave/linux-agent/dataplane.json",
   "direct_attempt_path": "/var/lib/nodeweave/linux-agent/direct-attempts.json",
+  "direct_attempt_report_path": "/var/lib/nodeweave/linux-agent/direct-attempt-report.json",
   "transport_report_path": "/var/lib/nodeweave/linux-agent/transport-report.json",
   "recovery_state_path": "/var/lib/nodeweave/linux-agent/recovery-state.json",
   "stun_servers": [],

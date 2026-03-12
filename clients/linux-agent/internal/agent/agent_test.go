@@ -1466,12 +1466,14 @@ func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) 
 
 	svc := &Service{
 		cfg: config.Config{
-			DirectAttemptPath:   filepath.Join(tmpDir, "direct-attempts.json"),
-			TransportReportPath: filepath.Join(tmpDir, "transport-report.json"),
+			DirectAttemptPath:       filepath.Join(tmpDir, "direct-attempts.json"),
+			DirectAttemptReportPath: filepath.Join(tmpDir, "direct-attempt-report.json"),
+			TransportReportPath:     filepath.Join(tmpDir, "transport-report.json"),
 		},
 		dataplaneRuntime: &activeDataplane{
 			secureUDP: transportA,
 		},
+		attemptReports:    map[string]state.DirectAttemptReportEntry{},
 		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
 		scheduledAttempts: map[string]context.CancelFunc{},
 	}
@@ -1506,6 +1508,13 @@ func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) 
 	if len(attempts) != 0 {
 		t.Fatalf("expected completed direct attempt queue to be empty, got %#v", attempts)
 	}
+	report, err := state.LoadDirectAttemptReport(filepath.Join(tmpDir, "direct-attempt-report.json"))
+	if err != nil {
+		t.Fatalf("load direct attempt report: %v", err)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].AttemptID != "attempt-agent-success" || report.Entries[0].Status != "completed" || report.Entries[0].Result != "success" {
+		t.Fatalf("expected completed direct attempt report entry, got %#v", report)
+	}
 
 	cancel()
 	for i := 0; i < 2; i++ {
@@ -1528,9 +1537,11 @@ func TestScheduleDirectAttemptsPersistsWithoutTransportAndRestoresLater(t *testi
 
 	svc := &Service{
 		cfg: config.Config{
-			DirectAttemptPath:   filepath.Join(tmpDir, "direct-attempts.json"),
-			TransportReportPath: filepath.Join(tmpDir, "transport-report.json"),
+			DirectAttemptPath:       filepath.Join(tmpDir, "direct-attempts.json"),
+			DirectAttemptReportPath: filepath.Join(tmpDir, "direct-attempt-report.json"),
+			TransportReportPath:     filepath.Join(tmpDir, "transport-report.json"),
 		},
+		attemptReports:    map[string]state.DirectAttemptReportEntry{},
 		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
 		scheduledAttempts: map[string]context.CancelFunc{},
 	}
@@ -1581,6 +1592,13 @@ func TestScheduleDirectAttemptsPersistsWithoutTransportAndRestoresLater(t *testi
 	if len(attempts) != 1 || attempts[0].AttemptID != instruction.AttemptID || len(attempts[0].Candidates) != 1 || attempts[0].Candidates[0] != transportB.Address() {
 		t.Fatalf("expected pending direct attempt to persist, got %#v", attempts)
 	}
+	report, err := state.LoadDirectAttemptReport(svc.cfg.DirectAttemptReportPath)
+	if err != nil {
+		t.Fatalf("load direct attempt report while transport missing: %v", err)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].Status != "waiting_transport" || report.Entries[0].WaitReason != "transport_unavailable" {
+		t.Fatalf("expected waiting_transport direct attempt report, got %#v", report)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1616,12 +1634,60 @@ func TestScheduleDirectAttemptsPersistsWithoutTransportAndRestoresLater(t *testi
 	if len(attempts) != 0 {
 		t.Fatalf("expected restored direct attempt queue to be empty, got %#v", attempts)
 	}
+	report, err = state.LoadDirectAttemptReport(svc.cfg.DirectAttemptReportPath)
+	if err != nil {
+		t.Fatalf("load direct attempt report after restore: %v", err)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].AttemptID != instruction.AttemptID || report.Entries[0].Status != "completed" || report.Entries[0].Result != "success" {
+		t.Fatalf("expected completed restored direct attempt report, got %#v", report)
+	}
 
 	cancel()
 	for i := 0; i < 2; i++ {
 		if err := <-errCh; err != nil {
 			t.Fatalf("transport serve: %v", err)
 		}
+	}
+}
+
+func TestScheduleDirectAttemptsMarksExpiredAttemptsInReport(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	svc := &Service{
+		cfg: config.Config{
+			DirectAttemptPath:       filepath.Join(tmpDir, "direct-attempts.json"),
+			DirectAttemptReportPath: filepath.Join(tmpDir, "direct-attempt-report.json"),
+		},
+		attemptReports:    map[string]state.DirectAttemptReportEntry{},
+		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
+		scheduledAttempts: map[string]context.CancelFunc{},
+	}
+
+	svc.scheduleDirectAttempts([]api.DirectAttemptInstruction{
+		{
+			AttemptID:     "attempt-expired",
+			PeerNodeID:    "node-b",
+			ExecuteAt:     time.Now().UTC().Add(-2 * time.Second),
+			Window:        200,
+			BurstInterval: 50,
+			Candidates:    []string{"203.0.113.10:51820"},
+			Reason:        "manual_recover",
+		},
+	})
+
+	attempts, err := state.LoadDirectAttempts(svc.cfg.DirectAttemptPath)
+	if err != nil {
+		t.Fatalf("load direct attempts after expiration: %v", err)
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("expected expired direct attempt queue to be empty, got %#v", attempts)
+	}
+	report, err := state.LoadDirectAttemptReport(svc.cfg.DirectAttemptReportPath)
+	if err != nil {
+		t.Fatalf("load direct attempt report after expiration: %v", err)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].AttemptID != "attempt-expired" || report.Entries[0].Status != "expired" || report.Entries[0].Result != "expired" {
+		t.Fatalf("expected expired direct attempt report entry, got %#v", report)
 	}
 }
 

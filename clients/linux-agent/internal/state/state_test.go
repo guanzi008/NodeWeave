@@ -312,6 +312,42 @@ func TestSaveAndLoadDirectAttempts(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadDirectAttemptReport(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "direct-attempt-report.json")
+
+	want := DirectAttemptReport{
+		GeneratedAt: time.Now().UTC(),
+		Entries: []DirectAttemptReportEntry{
+			{
+				AttemptID:      "attempt-1",
+				PeerNodeID:     "node_2",
+				ExecuteAt:      time.Now().UTC().Add(5 * time.Second),
+				Status:         "waiting_transport",
+				Result:         "queued",
+				WaitReason:     "transport_unavailable",
+				QueuedAt:       time.Now().UTC(),
+				LastUpdatedAt:  time.Now().UTC(),
+				Candidates:     []string{"203.0.113.10:51820"},
+				ReachedAddress: "",
+				ActiveAddress:  "",
+			},
+		},
+	}
+
+	if err := SaveDirectAttemptReport(path, want); err != nil {
+		t.Fatalf("save direct attempt report: %v", err)
+	}
+
+	got, err := LoadDirectAttemptReport(path)
+	if err != nil {
+		t.Fatalf("load direct attempt report: %v", err)
+	}
+	if len(got.Entries) != 1 || got.Entries[0].AttemptID != want.Entries[0].AttemptID || got.Entries[0].WaitReason != want.Entries[0].WaitReason {
+		t.Fatalf("unexpected direct attempt report roundtrip: %#v", got)
+	}
+}
+
 func TestSaveAndLoadSTUNReport(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "stun-report.json")

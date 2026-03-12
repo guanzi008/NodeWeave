@@ -41,6 +41,7 @@ type Service struct {
 	dataplaneMu       sync.Mutex
 	dataplaneRuntime  *activeDataplane
 	attemptMu         sync.Mutex
+	attemptReports    map[string]state.DirectAttemptReportEntry
 	pendingAttempts   map[string]api.DirectAttemptInstruction
 	scheduledAttempts map[string]context.CancelFunc
 	recoveryMu        sync.RWMutex
@@ -48,6 +49,8 @@ type Service struct {
 	warmupMu          sync.Mutex
 	warmupWakeCh      chan struct{}
 }
+
+const directAttemptReportHistoryLimit = 128
 
 type activeDataplane struct {
 	signature     string
@@ -80,6 +83,7 @@ func New(cfg config.Config) (*Service, error) {
 		cfg:               cfg,
 		client:            contractsclient.New(cfg.ServerURL),
 		runtimeDriver:     newRuntimeDriver(cfg),
+		attemptReports:    map[string]state.DirectAttemptReportEntry{},
 		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
 		scheduledAttempts: map[string]context.CancelFunc{},
 		recoveryStates:    map[string]api.PeerRecoveryState{},
@@ -92,17 +96,35 @@ func New(cfg config.Config) (*Service, error) {
 	if recoveryStates, err := state.LoadRecoveryStates(cfg.RecoveryStatePath); err == nil {
 		svc.setRecoveryStates(recoveryStates)
 	}
+	if report, err := state.LoadDirectAttemptReport(cfg.DirectAttemptReportPath); err == nil {
+		for _, entry := range report.Entries {
+			attemptID := strings.TrimSpace(entry.AttemptID)
+			if attemptID == "" {
+				continue
+			}
+			entry.AttemptID = attemptID
+			entry.PeerNodeID = strings.TrimSpace(entry.PeerNodeID)
+			entry.Candidates = normalizedStrings(entry.Candidates)
+			svc.attemptReports[attemptID] = entry
+		}
+	}
 	if attempts, err := state.LoadDirectAttempts(cfg.DirectAttemptPath); err == nil {
 		now := time.Now().UTC()
 		svc.attemptMu.Lock()
 		changed := svc.queueDirectAttemptsLocked(attempts, now)
-		if svc.pruneExpiredPendingDirectAttemptsLocked(now) {
+		expired := svc.pruneExpiredPendingDirectAttemptsLocked(now)
+		for _, instruction := range expired {
+			svc.markExpiredDirectAttemptReportLocked(instruction, now)
 			changed = true
 		}
+		svc.syncPendingDirectAttemptReportsLocked(false, now)
 		if changed {
 			if err := svc.persistPendingDirectAttemptsLocked(); err != nil {
 				log.Printf("persist normalized direct attempts: %v", err)
 			}
+		}
+		if err := svc.persistDirectAttemptReportLocked(); err != nil {
+			log.Printf("persist direct attempt report: %v", err)
 		}
 		svc.attemptMu.Unlock()
 	}
@@ -897,6 +919,198 @@ func directAttemptExpired(instruction api.DirectAttemptInstruction, now time.Tim
 	return now.After(instruction.ExecuteAt.Add(directAttemptWindow(instruction)))
 }
 
+func isTerminalDirectAttemptStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "completed", "expired":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) touchDirectAttemptReportLocked(instruction api.DirectAttemptInstruction, now time.Time) {
+	if s.attemptReports == nil {
+		s.attemptReports = make(map[string]state.DirectAttemptReportEntry)
+	}
+	attemptID := strings.TrimSpace(instruction.AttemptID)
+	if attemptID == "" {
+		return
+	}
+	entry := s.attemptReports[attemptID]
+	entry.AttemptID = attemptID
+	entry.PeerNodeID = strings.TrimSpace(instruction.PeerNodeID)
+	entry.ExecuteAt = instruction.ExecuteAt
+	entry.Window = instruction.Window
+	entry.BurstInterval = instruction.BurstInterval
+	entry.Reason = strings.TrimSpace(instruction.Reason)
+	entry.Candidates = append([]string(nil), instruction.Candidates...)
+	if entry.QueuedAt.IsZero() {
+		entry.QueuedAt = now
+	}
+	if strings.TrimSpace(entry.Status) == "" || isTerminalDirectAttemptStatus(entry.Status) {
+		entry.Status = "queued"
+		entry.Result = "queued"
+		entry.WaitReason = ""
+		entry.LastError = ""
+		entry.ScheduledAt = time.Time{}
+		entry.StartedAt = time.Time{}
+		entry.CompletedAt = time.Time{}
+		entry.ReachedAddress = ""
+		entry.ActiveAddress = ""
+	}
+	entry.LastUpdatedAt = now
+	s.attemptReports[attemptID] = entry
+}
+
+func (s *Service) setDirectAttemptWaitingLocked(instruction api.DirectAttemptInstruction, now time.Time, waitReason string) {
+	s.touchDirectAttemptReportLocked(instruction, now)
+	entry := s.attemptReports[strings.TrimSpace(instruction.AttemptID)]
+	entry.Status = "waiting_transport"
+	entry.Result = "queued"
+	entry.WaitReason = strings.TrimSpace(waitReason)
+	entry.LastUpdatedAt = now
+	s.attemptReports[entry.AttemptID] = entry
+}
+
+func (s *Service) markScheduledDirectAttemptReportLocked(instruction api.DirectAttemptInstruction, now time.Time) {
+	s.touchDirectAttemptReportLocked(instruction, now)
+	entry := s.attemptReports[strings.TrimSpace(instruction.AttemptID)]
+	entry.Status = "scheduled"
+	entry.Result = "scheduled"
+	entry.WaitReason = ""
+	entry.LastError = ""
+	entry.ScheduledAt = now
+	entry.LastUpdatedAt = now
+	s.attemptReports[entry.AttemptID] = entry
+}
+
+func (s *Service) markExecutingDirectAttemptReportLocked(instruction api.DirectAttemptInstruction, now time.Time) {
+	s.touchDirectAttemptReportLocked(instruction, now)
+	entry := s.attemptReports[strings.TrimSpace(instruction.AttemptID)]
+	entry.Status = "executing"
+	entry.Result = "executing"
+	entry.WaitReason = ""
+	entry.LastError = ""
+	if entry.ScheduledAt.IsZero() {
+		entry.ScheduledAt = now
+	}
+	entry.StartedAt = now
+	entry.LastUpdatedAt = now
+	s.attemptReports[entry.AttemptID] = entry
+}
+
+func (s *Service) markCompletedDirectAttemptReportLocked(instruction api.DirectAttemptInstruction, result secureudp.DirectAttemptResult, err error, now time.Time) {
+	s.touchDirectAttemptReportLocked(instruction, now)
+	entry := s.attemptReports[strings.TrimSpace(instruction.AttemptID)]
+	entry.Status = "completed"
+	entry.Result = strings.TrimSpace(result.Result)
+	if entry.Result == "" {
+		entry.Result = "error"
+	}
+	entry.WaitReason = ""
+	entry.LastError = ""
+	if err != nil {
+		entry.LastError = err.Error()
+	} else if strings.TrimSpace(result.Error) != "" {
+		entry.LastError = strings.TrimSpace(result.Error)
+	}
+	if entry.ScheduledAt.IsZero() {
+		entry.ScheduledAt = now
+	}
+	if entry.StartedAt.IsZero() && !result.StartedAt.IsZero() {
+		entry.StartedAt = result.StartedAt
+	}
+	if entry.StartedAt.IsZero() {
+		entry.StartedAt = now
+	}
+	entry.CompletedAt = now
+	if !result.CompletedAt.IsZero() {
+		entry.CompletedAt = result.CompletedAt
+	}
+	entry.ReachedAddress = strings.TrimSpace(result.ReachedAddress)
+	entry.ActiveAddress = strings.TrimSpace(result.ActiveAddress)
+	entry.LastUpdatedAt = now
+	s.attemptReports[entry.AttemptID] = entry
+}
+
+func (s *Service) markCanceledDirectAttemptReportLocked(instruction api.DirectAttemptInstruction, now time.Time, waitReason string, err error) {
+	s.touchDirectAttemptReportLocked(instruction, now)
+	entry := s.attemptReports[strings.TrimSpace(instruction.AttemptID)]
+	entry.Status = "waiting_transport"
+	entry.Result = "cancelled"
+	entry.WaitReason = strings.TrimSpace(waitReason)
+	if err != nil {
+		entry.LastError = err.Error()
+	}
+	entry.LastUpdatedAt = now
+	entry.CompletedAt = time.Time{}
+	s.attemptReports[entry.AttemptID] = entry
+}
+
+func (s *Service) markExpiredDirectAttemptReportLocked(instruction api.DirectAttemptInstruction, now time.Time) {
+	s.touchDirectAttemptReportLocked(instruction, now)
+	entry := s.attemptReports[strings.TrimSpace(instruction.AttemptID)]
+	entry.Status = "expired"
+	entry.Result = "expired"
+	entry.WaitReason = ""
+	entry.LastError = "direct attempt window expired before execution"
+	entry.CompletedAt = now
+	entry.LastUpdatedAt = now
+	s.attemptReports[entry.AttemptID] = entry
+}
+
+func (s *Service) syncPendingDirectAttemptReportsLocked(transportReady bool, now time.Time) {
+	for _, instruction := range s.pendingAttempts {
+		s.touchDirectAttemptReportLocked(instruction, now)
+		if transportReady {
+			continue
+		}
+		s.setDirectAttemptWaitingLocked(instruction, now, "transport_unavailable")
+	}
+}
+
+func (s *Service) trimDirectAttemptReportsLocked() {
+	if len(s.attemptReports) <= directAttemptReportHistoryLimit {
+		return
+	}
+	terminalIDs := make([]string, 0, len(s.attemptReports))
+	for attemptID, entry := range s.attemptReports {
+		if isTerminalDirectAttemptStatus(entry.Status) {
+			terminalIDs = append(terminalIDs, attemptID)
+		}
+	}
+	sort.Slice(terminalIDs, func(i, j int) bool {
+		left := s.attemptReports[terminalIDs[i]]
+		right := s.attemptReports[terminalIDs[j]]
+		if left.LastUpdatedAt.Equal(right.LastUpdatedAt) {
+			return left.AttemptID < right.AttemptID
+		}
+		return left.LastUpdatedAt.Before(right.LastUpdatedAt)
+	})
+	for len(s.attemptReports) > directAttemptReportHistoryLimit && len(terminalIDs) > 0 {
+		delete(s.attemptReports, terminalIDs[0])
+		terminalIDs = terminalIDs[1:]
+	}
+}
+
+func (s *Service) persistDirectAttemptReportLocked() error {
+	report := state.DirectAttemptReport{
+		GeneratedAt: time.Now().UTC(),
+		Entries:     make([]state.DirectAttemptReportEntry, 0, len(s.attemptReports)),
+	}
+	s.trimDirectAttemptReportsLocked()
+	for _, entry := range s.attemptReports {
+		report.Entries = append(report.Entries, entry)
+	}
+	sort.Slice(report.Entries, func(i, j int) bool {
+		if report.Entries[i].LastUpdatedAt.Equal(report.Entries[j].LastUpdatedAt) {
+			return report.Entries[i].AttemptID < report.Entries[j].AttemptID
+		}
+		return report.Entries[i].LastUpdatedAt.After(report.Entries[j].LastUpdatedAt)
+	})
+	return state.SaveDirectAttemptReport(s.cfg.DirectAttemptReportPath, report)
+}
+
 func (s *Service) queueDirectAttemptsLocked(attempts []api.DirectAttemptInstruction, now time.Time) bool {
 	if s.pendingAttempts == nil {
 		s.pendingAttempts = make(map[string]api.DirectAttemptInstruction)
@@ -904,28 +1118,34 @@ func (s *Service) queueDirectAttemptsLocked(attempts []api.DirectAttemptInstruct
 	changed := false
 	for _, instruction := range attempts {
 		instruction, ok := normalizeDirectAttempt(instruction)
-		if !ok || directAttemptExpired(instruction, now) {
+		if !ok {
+			continue
+		}
+		if directAttemptExpired(instruction, now) {
+			s.markExpiredDirectAttemptReportLocked(instruction, now)
+			changed = true
 			continue
 		}
 		s.pendingAttempts[instruction.AttemptID] = instruction
+		s.touchDirectAttemptReportLocked(instruction, now)
 		changed = true
 	}
 	return changed
 }
 
-func (s *Service) pruneExpiredPendingDirectAttemptsLocked(now time.Time) bool {
+func (s *Service) pruneExpiredPendingDirectAttemptsLocked(now time.Time) []api.DirectAttemptInstruction {
 	if len(s.pendingAttempts) == 0 {
-		return false
+		return nil
 	}
-	changed := false
+	expired := make([]api.DirectAttemptInstruction, 0)
 	for attemptID, instruction := range s.pendingAttempts {
 		if !directAttemptExpired(instruction, now) {
 			continue
 		}
 		delete(s.pendingAttempts, attemptID)
-		changed = true
+		expired = append(expired, instruction)
 	}
-	return changed
+	return expired
 }
 
 func (s *Service) persistPendingDirectAttemptsLocked() error {
@@ -963,13 +1183,20 @@ func (s *Service) finalizePendingDirectAttempt(attemptID string, remove bool, no
 			delete(s.pendingAttempts, attemptID)
 			changed = true
 		}
-	} else if s.pruneExpiredPendingDirectAttemptsLocked(now) {
-		changed = true
+	} else {
+		expired := s.pruneExpiredPendingDirectAttemptsLocked(now)
+		for _, instruction := range expired {
+			s.markExpiredDirectAttemptReportLocked(instruction, now)
+			changed = true
+		}
 	}
 	if changed {
 		if err := s.persistPendingDirectAttemptsLocked(); err != nil {
 			log.Printf("persist direct attempts failed: %v", err)
 		}
+	}
+	if err := s.persistDirectAttemptReportLocked(); err != nil {
+		log.Printf("persist direct attempt report failed: %v", err)
 	}
 	s.attemptMu.Unlock()
 }
@@ -978,13 +1205,20 @@ func (s *Service) scheduleDirectAttempts(attempts []api.DirectAttemptInstruction
 	now := time.Now().UTC()
 	s.attemptMu.Lock()
 	changed := s.queueDirectAttemptsLocked(attempts, now)
-	if s.pruneExpiredPendingDirectAttemptsLocked(now) {
+	expired := s.pruneExpiredPendingDirectAttemptsLocked(now)
+	for _, instruction := range expired {
+		s.markExpiredDirectAttemptReportLocked(instruction, now)
 		changed = true
 	}
+	transport := s.sharedSTUNTransport()
+	s.syncPendingDirectAttemptReportsLocked(transport != nil, now)
 	if changed {
 		if err := s.persistPendingDirectAttemptsLocked(); err != nil {
 			log.Printf("persist direct attempts failed: %v", err)
 		}
+	}
+	if err := s.persistDirectAttemptReportLocked(); err != nil {
+		log.Printf("persist direct attempt report failed: %v", err)
 	}
 	pending := make([]api.DirectAttemptInstruction, 0, len(s.pendingAttempts))
 	for _, instruction := range s.pendingAttempts {
@@ -992,7 +1226,6 @@ func (s *Service) scheduleDirectAttempts(attempts []api.DirectAttemptInstruction
 	}
 	s.attemptMu.Unlock()
 
-	transport := s.sharedSTUNTransport()
 	if transport == nil {
 		return
 	}
@@ -1010,6 +1243,10 @@ func (s *Service) scheduleDirectAttempts(attempts []api.DirectAttemptInstruction
 		}
 		attemptCtx, cancel := context.WithCancel(context.Background())
 		s.scheduledAttempts[attemptID] = cancel
+		s.markScheduledDirectAttemptReportLocked(instruction, now)
+		if err := s.persistDirectAttemptReportLocked(); err != nil {
+			log.Printf("persist direct attempt report failed: %v", err)
+		}
 		s.attemptMu.Unlock()
 
 		go func(instruction api.DirectAttemptInstruction, transport *secureudp.Transport, attemptCtx context.Context) {
@@ -1018,6 +1255,14 @@ func (s *Service) scheduleDirectAttempts(attempts []api.DirectAttemptInstruction
 				delete(s.scheduledAttempts, strings.TrimSpace(instruction.AttemptID))
 				s.attemptMu.Unlock()
 			}()
+
+			startedAt := time.Now().UTC()
+			s.attemptMu.Lock()
+			s.markExecutingDirectAttemptReportLocked(instruction, startedAt)
+			if err := s.persistDirectAttemptReportLocked(); err != nil {
+				log.Printf("persist direct attempt report failed: %v", err)
+			}
+			s.attemptMu.Unlock()
 
 			result, err := transport.ExecuteDirectAttempt(attemptCtx, secureudp.DirectAttempt{
 				AttemptID:     instruction.AttemptID,
@@ -1033,9 +1278,24 @@ func (s *Service) scheduleDirectAttempts(attempts []api.DirectAttemptInstruction
 			}
 			now := time.Now().UTC()
 			if errors.Is(err, context.Canceled) {
+				s.attemptMu.Lock()
+				pendingInstruction, stillPending := s.pendingAttempts[strings.TrimSpace(instruction.AttemptID)]
+				if stillPending && !directAttemptExpired(pendingInstruction, now) {
+					s.markCanceledDirectAttemptReportLocked(pendingInstruction, now, "transport_reloading", err)
+				}
+				if persistErr := s.persistDirectAttemptReportLocked(); persistErr != nil {
+					log.Printf("persist direct attempt report failed: %v", persistErr)
+				}
+				s.attemptMu.Unlock()
 				s.finalizePendingDirectAttempt(instruction.AttemptID, false, now)
 				return
 			}
+			s.attemptMu.Lock()
+			s.markCompletedDirectAttemptReportLocked(instruction, result, err, now)
+			if persistErr := s.persistDirectAttemptReportLocked(); persistErr != nil {
+				log.Printf("persist direct attempt report failed: %v", persistErr)
+			}
+			s.attemptMu.Unlock()
 			s.finalizePendingDirectAttempt(instruction.AttemptID, true, now)
 			if err != nil {
 				log.Printf(

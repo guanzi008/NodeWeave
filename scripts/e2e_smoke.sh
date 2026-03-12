@@ -67,7 +67,11 @@ cfg = {
     "session_path": "$TMP_DIR/linux-agent-session.json",
     "session_report_path": "$TMP_DIR/linux-agent-session-report.json",
     "dataplane_path": "$TMP_DIR/linux-agent-dataplane.json",
+    "direct_attempt_path": "$TMP_DIR/linux-agent-direct-attempts.json",
+    "direct_attempt_report_path": "$TMP_DIR/linux-agent-direct-attempt-report.json",
     "transport_report_path": "$TMP_DIR/linux-agent-transport-report.json",
+    "recovery_state_path": "$TMP_DIR/linux-agent-recovery-state.json",
+    "stun_report_path": "$TMP_DIR/linux-agent-stun-report.json",
     "apply_mode": "linux-plan",
     "dataplane_mode": "secure-udp",
     "dataplane_listen_address": "127.0.0.1:0",
@@ -106,5 +110,7 @@ go run ./clients/linux-agent/cmd/linux-agent session-status --config "$AGENT_CON
 go run ./clients/linux-agent/cmd/linux-agent session-report --config "$AGENT_CONFIG" >/dev/null
 go run ./clients/linux-agent/cmd/linux-agent dataplane-status --config "$AGENT_CONFIG" >/dev/null
 go run ./clients/linux-agent/cmd/linux-agent transport-status --config "$AGENT_CONFIG" >/dev/null
+go run ./clients/linux-agent/cmd/linux-agent direct-attempt-status --config "$AGENT_CONFIG" >/dev/null
+go run ./clients/linux-agent/cmd/linux-agent direct-attempt-report --config "$AGENT_CONFIG" >/dev/null
 
 echo "e2e smoke passed"

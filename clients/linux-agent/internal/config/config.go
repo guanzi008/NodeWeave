@@ -25,6 +25,7 @@ type Config struct {
 	SessionReportPath        string        `json:"session_report_path"`
 	DataplanePath            string        `json:"dataplane_path"`
 	DirectAttemptPath        string        `json:"direct_attempt_path"`
+	DirectAttemptReportPath  string        `json:"direct_attempt_report_path"`
 	TransportReportPath      string        `json:"transport_report_path"`
 	RecoveryStatePath        string        `json:"recovery_state_path"`
 	STUNServers              []string      `json:"stun_servers"`
@@ -92,6 +93,7 @@ func Default() Config {
 		SessionReportPath:        filepath.Join(baseDir, "nodeweave", "linux-agent-session-report.json"),
 		DataplanePath:            filepath.Join(baseDir, "nodeweave", "linux-agent-dataplane.json"),
 		DirectAttemptPath:        filepath.Join(baseDir, "nodeweave", "linux-agent-direct-attempts.json"),
+		DirectAttemptReportPath:  filepath.Join(baseDir, "nodeweave", "linux-agent-direct-attempt-report.json"),
 		TransportReportPath:      filepath.Join(baseDir, "nodeweave", "linux-agent-transport-report.json"),
 		RecoveryStatePath:        filepath.Join(baseDir, "nodeweave", "linux-agent-recovery-state.json"),
 		STUNServers:              []string{},

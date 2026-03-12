@@ -1305,6 +1305,116 @@ func TestStartDirectWarmupUsesBlockedUntilWhenNoNextProbe(t *testing.T) {
 	}
 }
 
+func TestStartDirectWarmupWakesImmediatelyOnRecoveryUpdate(t *testing.T) {
+	privateKeyA, publicKeyA, err := secureudp.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair A: %v", err)
+	}
+	privateKeyB, publicKeyB, err := secureudp.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair B: %v", err)
+	}
+
+	transportA, err := secureudp.Listen(secureudp.Config{
+		NodeID:        "node-a",
+		ListenAddress: "127.0.0.1:0",
+		PrivateKey:    privateKeyA,
+		Peers: []session.Peer{{
+			NodeID:    "node-b",
+			PublicKey: publicKeyB,
+			Candidates: []session.Candidate{
+				{Kind: "direct", Address: "127.0.0.1:0", Priority: 1000},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("listen transport A: %v", err)
+	}
+	defer func() { _ = transportA.Close() }()
+
+	transportB, err := secureudp.Listen(secureudp.Config{
+		NodeID:        "node-b",
+		ListenAddress: "127.0.0.1:0",
+		PrivateKey:    privateKeyB,
+		Peers: []session.Peer{{
+			NodeID:    "node-a",
+			PublicKey: publicKeyA,
+			Candidates: []session.Candidate{
+				{Kind: "direct", Address: transportA.Address(), Priority: 1000},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("listen transport B: %v", err)
+	}
+	defer func() { _ = transportB.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- transportA.Serve(ctx, func(context.Context, dataplane.Frame, net.Addr) error { return nil })
+	}()
+	go func() {
+		errCh <- transportB.Serve(ctx, func(context.Context, dataplane.Frame, net.Addr) error { return nil })
+	}()
+
+	svc := &Service{
+		cfg: config.Config{
+			DirectWarmupInterval: time.Hour,
+			SessionProbeTimeout:  200 * time.Millisecond,
+		},
+		recoveryStates: map[string]api.PeerRecoveryState{},
+		warmupWakeCh:   make(chan struct{}, 1),
+	}
+	svc.setRecoveryStates([]api.PeerRecoveryState{{
+		PeerNodeID:   "node-b",
+		Blocked:      true,
+		BlockReason:  "suppressed_timeout_budget",
+		BlockedUntil: time.Now().UTC().Add(time.Hour),
+	}})
+
+	spec := session.Spec{
+		NodeID: "node-a",
+		Peers: []session.Peer{{
+			NodeID:    "node-b",
+			PublicKey: publicKeyB,
+			Candidates: []session.Candidate{
+				{Kind: "direct", Address: transportB.Address(), Priority: 1000},
+			},
+		}},
+	}
+
+	svc.startDirectWarmup(ctx, transportA, spec)
+
+	time.Sleep(120 * time.Millisecond)
+	snapshot := transportA.Snapshot()
+	if len(snapshot.Peers) == 1 && snapshot.Peers[0].ActiveAddress == transportB.Address() {
+		t.Fatalf("expected long recovery gate to block warmup before wake, snapshot=%#v", snapshot)
+	}
+
+	svc.setRecoveryStates(nil)
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		snapshot = transportA.Snapshot()
+		if len(snapshot.Peers) == 1 && snapshot.Peers[0].ActiveAddress == transportB.Address() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for warmup wake after recovery update, snapshot=%#v", snapshot)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	cancel()
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatalf("transport serve: %v", err)
+		}
+	}
+}
+
 func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) {
 	tmpDir := t.TempDir()
 	privateKeyA, publicKeyA, err := secureudp.GenerateKeyPair()

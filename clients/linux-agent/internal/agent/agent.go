@@ -43,6 +43,8 @@ type Service struct {
 	scheduledAttempts map[string]context.CancelFunc
 	recoveryMu        sync.RWMutex
 	recoveryStates    map[string]api.PeerRecoveryState
+	warmupMu          sync.Mutex
+	warmupWakeCh      chan struct{}
 }
 
 type activeDataplane struct {
@@ -78,6 +80,7 @@ func New(cfg config.Config) (*Service, error) {
 		runtimeDriver:     newRuntimeDriver(cfg),
 		scheduledAttempts: map[string]context.CancelFunc{},
 		recoveryStates:    map[string]api.PeerRecoveryState{},
+		warmupWakeCh:      make(chan struct{}, 1),
 	}
 
 	if currentState, err := state.Load(cfg.StatePath); err == nil {
@@ -283,6 +286,24 @@ func (s *Service) setRecoveryStates(states []api.PeerRecoveryState) {
 	s.recoveryMu.Lock()
 	s.recoveryStates = index
 	s.recoveryMu.Unlock()
+	s.signalWarmupRecheck()
+}
+
+func (s *Service) ensureWarmupWakeCh() chan struct{} {
+	s.warmupMu.Lock()
+	defer s.warmupMu.Unlock()
+	if s.warmupWakeCh == nil {
+		s.warmupWakeCh = make(chan struct{}, 1)
+	}
+	return s.warmupWakeCh
+}
+
+func (s *Service) signalWarmupRecheck() {
+	wakeCh := s.ensureWarmupWakeCh()
+	select {
+	case wakeCh <- struct{}{}:
+	default:
+	}
 }
 
 func (s *Service) warmupBlockedUntil(peerNodeID string, now time.Time) (time.Time, bool) {
@@ -917,6 +938,7 @@ func (s *Service) startDirectWarmup(ctx context.Context, transport *secureudp.Tr
 	if transport == nil || s.cfg.DirectWarmupInterval <= 0 {
 		return
 	}
+	wakeCh := s.ensureWarmupWakeCh()
 
 	runWarmup := func() time.Duration {
 		statusByPeer := func(snapshot secureudp.Report) map[string]secureudp.PeerStatus {
@@ -1026,6 +1048,14 @@ func (s *Service) startDirectWarmup(ctx context.Context, transport *secureudp.Tr
 					<-timer.C
 				}
 				return
+			case <-wakeCh:
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				continue
 			case <-timer.C:
 			}
 		}

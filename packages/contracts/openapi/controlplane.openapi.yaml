@@ -231,6 +231,13 @@ components:
         last_issued_attempt_execute_at:
           type: string
           format: date-time
+        decision_status:
+          type: string
+        decision_reason:
+          type: string
+        decision_at:
+          type: string
+          format: date-time
     DirectAttemptInstruction:
       type: object
       properties:
@@ -338,6 +345,13 @@ components:
           type: string
           format: date-time
         observed_direct_recovery_last_issued_attempt_execute_at:
+          type: string
+          format: date-time
+        observed_direct_recovery_decision_status:
+          type: string
+        observed_direct_recovery_decision_reason:
+          type: string
+        observed_direct_recovery_decision_at:
           type: string
           format: date-time
     HeartbeatRequest:

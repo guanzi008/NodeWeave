@@ -725,6 +725,10 @@ func (s *SQLiteStore) currentBootstrapTx(tx *sql.Tx, selfNodeID string) (api.Boo
 }
 
 func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route) ([]api.Peer, error) {
+	selfNode, err := s.loadNodeTx(tx, selfNodeID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := tx.Query(`
 		SELECT id, device_id, overlay_ip, public_key, relay_region, status, endpoints_json, endpoint_records_json, last_seen_at, created_at, auth_token
 		FROM nodes
@@ -749,6 +753,8 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 		return nil, err
 	}
 	policy := directAttemptPolicyFromConfig(s.cfg)
+	now := time.Now().UTC()
+	selfCandidates := freshDirectCandidateAddressesWithPolicy(selfNode, now, policy)
 
 	peers := make([]api.Peer, 0)
 	for rows.Next() {
@@ -756,16 +762,17 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 		if err != nil {
 			return nil, err
 		}
+		peerCandidates := freshDirectCandidateAddressesWithPolicy(node, now, policy)
 		peerTransportState := transportStates[node.ID]
 		latestAttempt, ok, err := s.directAttemptPairByKeyTx(tx, pairKey(selfNodeID, node.ID))
 		if err != nil {
 			return nil, err
 		}
 		var latestAttemptPtr *directAttemptPair
-		if ok && !time.Now().UTC().After(latestAttempt.ExpiresAt) {
+		if ok && !now.After(latestAttempt.ExpiresAt) {
 			latestAttemptPtr = &latestAttempt
 		}
-		recoveryState := recoveryStateForPeer(node.ID, selfTransportStates[node.ID], peerTransportState, time.Now().UTC(), policy, latestAttemptPtr)
+		recoveryState := recoveryStateForPeer(selfNode, node, selfCandidates, peerCandidates, selfTransportStates[node.ID], peerTransportState, now, policy, latestAttemptPtr)
 		peer := api.Peer{
 			NodeID:          node.ID,
 			OverlayIP:       node.OverlayIP,
@@ -806,12 +813,21 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 			peer.ObservedDirectRecoveryLastIssuedAttemptAt = recoveryState.LastIssuedAttemptAt
 			peer.ObservedDirectRecoveryLastIssuedAttemptExecuteAt = recoveryState.LastIssuedAttemptExecuteAt
 		}
+		if recoveryState.DecisionStatus != "" {
+			peer.ObservedDirectRecoveryDecisionStatus = recoveryState.DecisionStatus
+			peer.ObservedDirectRecoveryDecisionReason = recoveryState.DecisionReason
+			peer.ObservedDirectRecoveryDecisionAt = recoveryState.DecisionAt
+		}
 		peers = append(peers, peer)
 	}
 	return peers, nil
 }
 
 func (s *SQLiteStore) directAttemptRecoveryStatesForNodeTx(tx *sql.Tx, nodeID string, now time.Time) ([]api.PeerRecoveryState, error) {
+	selfNode, err := s.loadNodeTx(tx, nodeID)
+	if err != nil {
+		return nil, err
+	}
 	selfStates, err := s.loadPeerTransportStatesByNodeTx(tx, nodeID)
 	if err != nil {
 		return nil, err
@@ -832,12 +848,18 @@ func (s *SQLiteStore) directAttemptRecoveryStatesForNodeTx(tx *sql.Tx, nodeID st
 	defer rows.Close()
 
 	policy := directAttemptPolicyFromConfig(s.cfg)
+	selfCandidates := freshDirectCandidateAddressesWithPolicy(selfNode, now, policy)
 	states := make([]api.PeerRecoveryState, 0)
 	for rows.Next() {
 		var peerID string
 		if err := rows.Scan(&peerID); err != nil {
 			return nil, fmt.Errorf("scan recovery state peer: %w", err)
 		}
+		peerNode, err := s.loadNodeTx(tx, peerID)
+		if err != nil {
+			return nil, err
+		}
+		peerCandidates := freshDirectCandidateAddressesWithPolicy(peerNode, now, policy)
 		latestAttempt, ok, err := s.directAttemptPairByKeyTx(tx, pairKey(nodeID, peerID))
 		if err != nil {
 			return nil, err
@@ -846,10 +868,7 @@ func (s *SQLiteStore) directAttemptRecoveryStatesForNodeTx(tx *sql.Tx, nodeID st
 		if ok && !now.After(latestAttempt.ExpiresAt) {
 			latestAttemptPtr = &latestAttempt
 		}
-		recoveryState := recoveryStateForPeer(peerID, selfStates[peerID], peerStatesForSelf[peerID], now, policy, latestAttemptPtr)
-		if !recoveryState.Blocked && recoveryState.LastIssuedAttemptID == "" {
-			continue
-		}
+		recoveryState := recoveryStateForPeer(selfNode, peerNode, selfCandidates, peerCandidates, selfStates[peerID], peerStatesForSelf[peerID], now, policy, latestAttemptPtr)
 		states = append(states, recoveryState)
 	}
 	return states, rows.Err()

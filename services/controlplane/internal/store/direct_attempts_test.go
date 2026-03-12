@@ -268,6 +268,8 @@ func TestDirectAttemptReasonSkipsSuppressionAfterRecentSuccess(t *testing.T) {
 
 func TestRecoveryStateForPeerUsesLongestBlock(t *testing.T) {
 	now := time.Now().UTC()
+	selfNode := api.Node{ID: "node-a", Status: "online", LastSeenAt: now}
+	peerNode := api.Node{ID: "node-b", Status: "online", LastSeenAt: now}
 	policy := directAttemptPolicy{
 		TransportFreshnessWindow:           30 * time.Second,
 		DirectAttemptCooldown:              2 * time.Second,
@@ -277,7 +279,7 @@ func TestRecoveryStateForPeerUsesLongestBlock(t *testing.T) {
 		DirectAttemptTimeoutSuppressWindow: 90 * time.Second,
 	}
 
-	recoveryState := recoveryStateForPeer("node-b", api.PeerTransportState{
+	recoveryState := recoveryStateForPeer(selfNode, peerNode, []string{"198.51.100.10:51820"}, []string{"203.0.113.20:51820"}, api.PeerTransportState{
 		PeerNodeID:                "node-b",
 		ActiveKind:                "relay",
 		ReportedAt:                now,
@@ -292,6 +294,8 @@ func TestRecoveryStateForPeerUsesLongestBlock(t *testing.T) {
 
 func TestRecoveryStateForPeerIncludesNextProbeAt(t *testing.T) {
 	now := time.Now().UTC()
+	selfNode := api.Node{ID: "node-a", Status: "online", LastSeenAt: now}
+	peerNode := api.Node{ID: "node-b", Status: "online", LastSeenAt: now}
 	policy := directAttemptPolicy{
 		TransportFreshnessWindow:                          30 * time.Second,
 		DirectAttemptCooldown:                             2 * time.Second,
@@ -308,7 +312,7 @@ func TestRecoveryStateForPeerIncludesNextProbeAt(t *testing.T) {
 	}
 
 	attemptAt := now.Add(-5 * time.Second)
-	recoveryState := recoveryStateForPeer("node-b", api.PeerTransportState{
+	recoveryState := recoveryStateForPeer(selfNode, peerNode, []string{"198.51.100.10:51820"}, []string{"203.0.113.20:51820"}, api.PeerTransportState{
 		PeerNodeID:                "node-b",
 		ActiveKind:                "relay",
 		ReportedAt:                now,
@@ -330,6 +334,8 @@ func TestRecoveryStateForPeerIncludesNextProbeAt(t *testing.T) {
 
 func TestRecoveryStateForPeerIncludesProbeRefillAtAfterBudgetExhausted(t *testing.T) {
 	now := time.Now().UTC()
+	selfNode := api.Node{ID: "node-a", Status: "online", LastSeenAt: now}
+	peerNode := api.Node{ID: "node-b", Status: "online", LastSeenAt: now}
 	policy := directAttemptPolicy{
 		TransportFreshnessWindow:                          30 * time.Second,
 		DirectAttemptCooldown:                             2 * time.Second,
@@ -346,7 +352,7 @@ func TestRecoveryStateForPeerIncludesProbeRefillAtAfterBudgetExhausted(t *testin
 	}
 
 	attemptAt := now.Add(-16 * time.Second)
-	recoveryState := recoveryStateForPeer("node-b", api.PeerTransportState{
+	recoveryState := recoveryStateForPeer(selfNode, peerNode, []string{"198.51.100.10:51820"}, []string{"203.0.113.20:51820"}, api.PeerTransportState{
 		PeerNodeID:                "node-b",
 		ActiveKind:                "relay",
 		ReportedAt:                now,
@@ -362,8 +368,13 @@ func TestRecoveryStateForPeerIncludesProbeRefillAtAfterBudgetExhausted(t *testin
 
 func TestRecoveryStateForPeerIncludesLatestIssuedAttemptTrace(t *testing.T) {
 	now := time.Now().UTC()
+	selfNode := api.Node{ID: "node-a", Status: "online", LastSeenAt: now}
+	peerNode := api.Node{ID: "node-b", Status: "online", LastSeenAt: now}
 	recoveryState := recoveryStateForPeer(
-		"node-b",
+		selfNode,
+		peerNode,
+		[]string{"198.51.100.10:51820"},
+		[]string{"203.0.113.20:51820"},
 		api.PeerTransportState{},
 		api.PeerTransportState{},
 		now,
@@ -380,6 +391,30 @@ func TestRecoveryStateForPeerIncludesLatestIssuedAttemptTrace(t *testing.T) {
 	}
 	if recoveryState.LastIssuedAttemptAt.IsZero() || recoveryState.LastIssuedAttemptExecuteAt.IsZero() {
 		t.Fatalf("expected recovery state to include issued/execute timestamps, got %#v", recoveryState)
+	}
+}
+
+func TestRecoveryStateForPeerIncludesDecisionWhenNotScheduled(t *testing.T) {
+	now := time.Now().UTC()
+	selfNode := api.Node{ID: "node-a", Status: "online", LastSeenAt: now}
+	peerNode := api.Node{ID: "node-b", Status: "offline", LastSeenAt: now.Add(-2 * time.Minute)}
+
+	recoveryState := recoveryStateForPeer(
+		selfNode,
+		peerNode,
+		[]string{"198.51.100.10:51820"},
+		nil,
+		api.PeerTransportState{PeerNodeID: "node-b"},
+		api.PeerTransportState{},
+		now,
+		directAttemptPolicy{NodeOnlineWindow: 30 * time.Second, EndpointFreshnessWindow: 45 * time.Second},
+		nil,
+	)
+	if recoveryState.DecisionStatus != "peer_offline" || recoveryState.DecisionReason != "peer_node_offline" {
+		t.Fatalf("expected offline decision metadata, got %#v", recoveryState)
+	}
+	if recoveryState.DecisionAt.IsZero() {
+		t.Fatalf("expected decision timestamp, got %#v", recoveryState)
 	}
 }
 

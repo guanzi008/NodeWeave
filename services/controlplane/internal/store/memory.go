@@ -320,6 +320,8 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 	}
 	selfTransportStates := s.peerTransports[selfNodeID]
 	policy := directAttemptPolicyFromConfig(s.cfg)
+	now := time.Now().UTC()
+	selfCandidates := freshDirectCandidateAddressesWithPolicy(selfNode, now, policy)
 
 	routes := make([]api.Route, 0, len(s.routes))
 	for _, route := range s.routes {
@@ -346,16 +348,17 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 		if node.ID == selfNodeID {
 			continue
 		}
+		peerCandidates := freshDirectCandidateAddressesWithPolicy(node, now, policy)
 		peerTransportState := api.PeerTransportState{}
 		if peerStates, ok := s.peerTransports[node.ID]; ok {
 			peerTransportState = peerStates[selfNodeID]
 		}
-		latestAttempt, hasAttempt := s.latestDirectAttemptForPairLocked(selfNodeID, node.ID, time.Now().UTC())
+		latestAttempt, hasAttempt := s.latestDirectAttemptForPairLocked(selfNodeID, node.ID, now)
 		var latestAttemptPtr *directAttemptPair
 		if hasAttempt {
 			latestAttemptPtr = &latestAttempt
 		}
-		recoveryState := recoveryStateForPeer(node.ID, selfTransportStates[node.ID], peerTransportState, time.Now().UTC(), policy, latestAttemptPtr)
+		recoveryState := recoveryStateForPeer(selfNode, node, selfCandidates, peerCandidates, selfTransportStates[node.ID], peerTransportState, now, policy, latestAttemptPtr)
 		peer := api.Peer{
 			NodeID:          node.ID,
 			OverlayIP:       node.OverlayIP,
@@ -395,6 +398,11 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 			peer.ObservedDirectRecoveryLastIssuedAttemptReason = recoveryState.LastIssuedAttemptReason
 			peer.ObservedDirectRecoveryLastIssuedAttemptAt = recoveryState.LastIssuedAttemptAt
 			peer.ObservedDirectRecoveryLastIssuedAttemptExecuteAt = recoveryState.LastIssuedAttemptExecuteAt
+		}
+		if recoveryState.DecisionStatus != "" {
+			peer.ObservedDirectRecoveryDecisionStatus = recoveryState.DecisionStatus
+			peer.ObservedDirectRecoveryDecisionReason = recoveryState.DecisionReason
+			peer.ObservedDirectRecoveryDecisionAt = recoveryState.DecisionAt
 		}
 		peers = append(peers, peer)
 	}
@@ -436,13 +444,19 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 }
 
 func (s *MemoryStore) directAttemptRecoveryStatesForNodeLocked(nodeID string, now time.Time) []api.PeerRecoveryState {
+	selfNode, ok := s.nodes[nodeID]
+	if !ok {
+		return nil
+	}
 	selfStates := s.peerTransports[nodeID]
 	policy := directAttemptPolicyFromConfig(s.cfg)
+	selfCandidates := freshDirectCandidateAddressesWithPolicy(selfNode, now, policy)
 	states := make([]api.PeerRecoveryState, 0, len(s.nodes))
-	for peerID := range s.nodes {
+	for peerID, peerNode := range s.nodes {
 		if peerID == nodeID {
 			continue
 		}
+		peerCandidates := freshDirectCandidateAddressesWithPolicy(peerNode, now, policy)
 		peerState := api.PeerTransportState{}
 		if reportedByPeer, ok := s.peerTransports[peerID]; ok {
 			peerState = reportedByPeer[nodeID]
@@ -452,10 +466,7 @@ func (s *MemoryStore) directAttemptRecoveryStatesForNodeLocked(nodeID string, no
 		if hasAttempt {
 			latestAttemptPtr = &latestAttempt
 		}
-		recoveryState := recoveryStateForPeer(peerID, selfStates[peerID], peerState, now, policy, latestAttemptPtr)
-		if !recoveryState.Blocked && recoveryState.LastIssuedAttemptID == "" {
-			continue
-		}
+		recoveryState := recoveryStateForPeer(selfNode, peerNode, selfCandidates, peerCandidates, selfStates[peerID], peerState, now, policy, latestAttemptPtr)
 		states = append(states, recoveryState)
 	}
 	sort.Slice(states, func(i, j int) bool {

@@ -81,6 +81,7 @@ go run ./cmd/controlplane
 - probe limit 现在还支持 quiet-period 自动回补；达到 `*_SUPPRESSED_PROBE_REFILL_INTERVAL` 后，已消耗的 probe 配额会逐步恢复
 - `relay_active` 和 `manual_recover` 可以使用独立的 lead/window/burst profile，不必和 `fresh_endpoints` 共用一套时间窗
 - 当前 block 状态会同时反映到 `HeartbeatResponse.peer_recovery_states` 和 bootstrap peer 摘要里，包含 `next_probe_at`、`probe_budget`、`probe_failures`、`probe_remaining` 和 `probe_refill_at`
+- 即使 controlplane 没有下发新的 `direct_attempts`，`peer_recovery_states` 和 bootstrap peer 摘要也会给出 `decision_status / decision_reason / decision_at`，用于解释为什么这轮没有恢复直连
 
 ## 测试
 

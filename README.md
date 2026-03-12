@@ -119,6 +119,7 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - `linux-agent direct-attempt-status` 可直接查看这些仍在本地排队的 coordinated direct attempts
 - `linux-agent direct-attempt-report` 会保留最近一批 attempt 的生命周期、controlplane `issued_at` 和等待原因，便于判断它是卡在 transport 不可用、正常排程、执行中，还是已经 timeout / relay_kept / success / expired
 - controlplane 返回的 `peer_recovery_states` 和 bootstrap peer 摘要现在也会暴露最近一次放行的 direct attempt ID / reason / `issued_at` / `execute_at`
+- 即使这次没有下发新的 direct attempt，controlplane 也会在 `peer_recovery_states[*].decision_status / decision_reason / decision_at` 以及 bootstrap peer 摘要里明确说明当前为什么被 block、为什么保持 direct、为什么因 peer offline / 缺少 fresh direct candidate 而没调度
 - `linux-agent` 后台 `direct_warmup_interval` 预热现在也会遵守 controlplane 返回的 `peer_recovery_states`，在 `next_probe_at` / `probe_refill_at` 之前暂停本地 warmup
 - heartbeat 把 recovery state 更新到本地后，后台 warmup 会立即重算，不必等上一个 sleep 周期结束
 - `linux-agent` 会在后台对 direct candidate 主动发起 secure-udp 握手预热，并根据 transport report 暴露的 `next_direct_retry_at` 精准安排下一轮恢复尝试，减少等待真实流量才建链的延迟

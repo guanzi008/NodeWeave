@@ -92,6 +92,9 @@ type PeerRecoveryState struct {
 	LastIssuedAttemptReason    string    `json:"last_issued_attempt_reason,omitempty"`
 	LastIssuedAttemptAt        time.Time `json:"last_issued_attempt_at,omitempty"`
 	LastIssuedAttemptExecuteAt time.Time `json:"last_issued_attempt_execute_at,omitempty"`
+	DecisionStatus             string    `json:"decision_status,omitempty"`
+	DecisionReason             string    `json:"decision_reason,omitempty"`
+	DecisionAt                 time.Time `json:"decision_at,omitempty"`
 }
 
 type Route struct {
@@ -145,6 +148,9 @@ type Peer struct {
 	ObservedDirectRecoveryLastIssuedAttemptReason    string                `json:"observed_direct_recovery_last_issued_attempt_reason,omitempty"`
 	ObservedDirectRecoveryLastIssuedAttemptAt        time.Time             `json:"observed_direct_recovery_last_issued_attempt_at,omitempty"`
 	ObservedDirectRecoveryLastIssuedAttemptExecuteAt time.Time             `json:"observed_direct_recovery_last_issued_attempt_execute_at,omitempty"`
+	ObservedDirectRecoveryDecisionStatus             string                `json:"observed_direct_recovery_decision_status,omitempty"`
+	ObservedDirectRecoveryDecisionReason             string                `json:"observed_direct_recovery_decision_reason,omitempty"`
+	ObservedDirectRecoveryDecisionAt                 time.Time             `json:"observed_direct_recovery_decision_at,omitempty"`
 }
 
 type RelayNode struct {

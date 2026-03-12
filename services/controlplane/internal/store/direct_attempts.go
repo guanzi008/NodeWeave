@@ -249,6 +249,12 @@ type directAttemptBlockState struct {
 	ProbeRefillAt  time.Time
 }
 
+type directAttemptDecision struct {
+	Status string
+	Reason string
+	At     time.Time
+}
+
 func pairKey(left, right string) string {
 	left = strings.TrimSpace(left)
 	right = strings.TrimSpace(right)
@@ -762,13 +768,84 @@ func applyDirectAttemptTrace(recoveryState api.PeerRecoveryState, attempt direct
 	return recoveryState
 }
 
-func recoveryStateForPeer(peerNodeID string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) api.PeerRecoveryState {
+func directAttemptDecisionForPeer(selfNode, peerNode api.Node, selfCandidates, peerCandidates []string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) directAttemptDecision {
+	if latestAttempt != nil && !now.After(latestAttempt.ExpiresAt) {
+		return directAttemptDecision{
+			Status: "attempt_issued",
+			Reason: strings.TrimSpace(latestAttempt.Reason),
+			At:     latestAttempt.IssuedAt,
+		}
+	}
 	block := laterBlockState(
 		directAttemptBlockStateWithPolicy(selfState, now, policy),
 		directAttemptBlockStateWithPolicy(peerState, now, policy),
 	)
+	if block.Blocked {
+		return directAttemptDecision{
+			Status: "blocked",
+			Reason: block.Reason,
+			At:     now,
+		}
+	}
+	if !isNodeOnlineWithPolicy(selfNode, now, policy) {
+		return directAttemptDecision{
+			Status: "local_offline",
+			Reason: "local_node_offline",
+			At:     now,
+		}
+	}
+	if !isNodeOnlineWithPolicy(peerNode, now, policy) {
+		return directAttemptDecision{
+			Status: "peer_offline",
+			Reason: "peer_node_offline",
+			At:     now,
+		}
+	}
+	if len(selfCandidates) == 0 {
+		return directAttemptDecision{
+			Status: "local_no_direct_candidate",
+			Reason: "local_node_has_no_fresh_direct_candidate",
+			At:     now,
+		}
+	}
+	if len(peerCandidates) == 0 {
+		return directAttemptDecision{
+			Status: "peer_no_direct_candidate",
+			Reason: "peer_node_has_no_fresh_direct_candidate",
+			At:     now,
+		}
+	}
+	if transportStateFreshWithPolicy(selfState, now, policy) && transportStateFreshWithPolicy(peerState, now, policy) &&
+		strings.EqualFold(strings.TrimSpace(selfState.ActiveKind), "direct") &&
+		strings.EqualFold(strings.TrimSpace(peerState.ActiveKind), "direct") {
+		return directAttemptDecision{
+			Status: "direct_active",
+			Reason: "both_peers_already_direct",
+			At:     now,
+		}
+	}
+	if reason, schedule := directAttemptReasonWithPolicy(selfState, peerState, now, policy); schedule {
+		return directAttemptDecision{
+			Status: "eligible",
+			Reason: reason,
+			At:     now,
+		}
+	}
+	return directAttemptDecision{
+		Status: "idle",
+		Reason: "not_scheduled",
+		At:     now,
+	}
+}
+
+func recoveryStateForPeer(selfNode, peerNode api.Node, selfCandidates, peerCandidates []string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) api.PeerRecoveryState {
+	block := laterBlockState(
+		directAttemptBlockStateWithPolicy(selfState, now, policy),
+		directAttemptBlockStateWithPolicy(peerState, now, policy),
+	)
+	decision := directAttemptDecisionForPeer(selfNode, peerNode, selfCandidates, peerCandidates, selfState, peerState, now, policy, latestAttempt)
 	recoveryState := api.PeerRecoveryState{
-		PeerNodeID:     strings.TrimSpace(peerNodeID),
+		PeerNodeID:     strings.TrimSpace(peerNode.ID),
 		Blocked:        block.Blocked,
 		BlockReason:    block.Reason,
 		BlockedUntil:   block.Until,
@@ -778,6 +855,9 @@ func recoveryStateForPeer(peerNodeID string, selfState, peerState api.PeerTransp
 		ProbeFailures:  block.ProbeFailures,
 		ProbeRemaining: block.ProbeRemaining,
 		ProbeRefillAt:  block.ProbeRefillAt,
+		DecisionStatus: decision.Status,
+		DecisionReason: decision.Reason,
+		DecisionAt:     decision.At,
 	}
 	if latestAttempt != nil {
 		recoveryState = applyDirectAttemptTrace(recoveryState, *latestAttempt)

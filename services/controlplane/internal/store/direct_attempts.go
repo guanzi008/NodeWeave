@@ -12,7 +12,9 @@ import (
 )
 
 const (
-	maxNATSamples = 4
+	maxNATSamples                       = 4
+	maxPrimaryDirectAttemptCandidates   = 4
+	maxSecondaryDirectAttemptCandidates = 2
 )
 
 type directAttemptPolicy struct {
@@ -47,6 +49,16 @@ type directAttemptPolicy struct {
 	RelayActiveAttemptLead                              time.Duration
 	RelayActiveAttemptWindow                            time.Duration
 	RelayActiveAttemptBurstInterval                     time.Duration
+	PrimaryUpgradeAttemptLead                           time.Duration
+	PrimaryUpgradeAttemptWindow                         time.Duration
+	PrimaryUpgradeAttemptBurstInterval                  time.Duration
+	PrimaryUpgradeAttemptCooldown                       time.Duration
+	PrimaryUpgradeAttemptManualRecoverAfter             time.Duration
+	PrimaryUpgradeAttemptSuppressAfter                  int
+	PrimaryUpgradeAttemptSuppressWindow                 time.Duration
+	PrimaryUpgradeAttemptSuppressedProbeInterval        time.Duration
+	PrimaryUpgradeAttemptSuppressedProbeLimit           int
+	PrimaryUpgradeAttemptSuppressedProbeRefillInterval  time.Duration
 	ManualRecoverAttemptLead                            time.Duration
 	ManualRecoverAttemptWindow                          time.Duration
 	ManualRecoverAttemptBurstInterval                   time.Duration
@@ -85,6 +97,16 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 		RelayActiveAttemptLead:                              cfg.RelayActiveAttemptLead,
 		RelayActiveAttemptWindow:                            cfg.RelayActiveAttemptWindow,
 		RelayActiveAttemptBurstInterval:                     cfg.RelayActiveAttemptBurstInterval,
+		PrimaryUpgradeAttemptLead:                           cfg.PrimaryUpgradeAttemptLead,
+		PrimaryUpgradeAttemptWindow:                         cfg.PrimaryUpgradeAttemptWindow,
+		PrimaryUpgradeAttemptBurstInterval:                  cfg.PrimaryUpgradeAttemptBurstInterval,
+		PrimaryUpgradeAttemptCooldown:                       cfg.PrimaryUpgradeAttemptCooldown,
+		PrimaryUpgradeAttemptManualRecoverAfter:             cfg.PrimaryUpgradeAttemptManualRecoverAfter,
+		PrimaryUpgradeAttemptSuppressAfter:                  cfg.PrimaryUpgradeAttemptSuppressAfter,
+		PrimaryUpgradeAttemptSuppressWindow:                 cfg.PrimaryUpgradeAttemptSuppressWindow,
+		PrimaryUpgradeAttemptSuppressedProbeInterval:        cfg.PrimaryUpgradeAttemptSuppressedProbeInterval,
+		PrimaryUpgradeAttemptSuppressedProbeLimit:           cfg.PrimaryUpgradeAttemptSuppressedProbeLimit,
+		PrimaryUpgradeAttemptSuppressedProbeRefillInterval:  cfg.PrimaryUpgradeAttemptSuppressedProbeRefillInterval,
 		ManualRecoverAttemptLead:                            cfg.ManualRecoverAttemptLead,
 		ManualRecoverAttemptWindow:                          cfg.ManualRecoverAttemptWindow,
 		ManualRecoverAttemptBurstInterval:                   cfg.ManualRecoverAttemptBurstInterval,
@@ -182,6 +204,30 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	if policy.RelayActiveAttemptBurstInterval <= 0 {
 		policy.RelayActiveAttemptBurstInterval = policy.DirectAttemptBurstInterval
 	}
+	if policy.PrimaryUpgradeAttemptLead <= 0 {
+		policy.PrimaryUpgradeAttemptLead = policy.RelayActiveAttemptLead
+	}
+	if policy.PrimaryUpgradeAttemptWindow <= 0 {
+		policy.PrimaryUpgradeAttemptWindow = policy.RelayActiveAttemptWindow
+	}
+	if policy.PrimaryUpgradeAttemptBurstInterval <= 0 {
+		policy.PrimaryUpgradeAttemptBurstInterval = policy.RelayActiveAttemptBurstInterval
+	}
+	if policy.PrimaryUpgradeAttemptSuppressAfter < 0 {
+		policy.PrimaryUpgradeAttemptSuppressAfter = 0
+	}
+	if policy.PrimaryUpgradeAttemptSuppressWindow < 0 {
+		policy.PrimaryUpgradeAttemptSuppressWindow = 0
+	}
+	if policy.PrimaryUpgradeAttemptSuppressedProbeInterval < 0 {
+		policy.PrimaryUpgradeAttemptSuppressedProbeInterval = 0
+	}
+	if policy.PrimaryUpgradeAttemptSuppressedProbeLimit < 0 {
+		policy.PrimaryUpgradeAttemptSuppressedProbeLimit = 0
+	}
+	if policy.PrimaryUpgradeAttemptSuppressedProbeRefillInterval < 0 {
+		policy.PrimaryUpgradeAttemptSuppressedProbeRefillInterval = 0
+	}
 	if policy.ManualRecoverAttemptLead <= 0 {
 		policy.ManualRecoverAttemptLead = policy.DirectAttemptLead
 	}
@@ -223,12 +269,32 @@ func (p directAttemptPolicy) profileForReason(reason string) directAttemptProfil
 	}
 }
 
+func (p directAttemptPolicy) profileForAttempt(reason string, selfCandidates, peerCandidates []api.DirectAttemptCandidate, selfState, peerState api.PeerTransportState, now time.Time) (string, directAttemptProfile) {
+	if shouldBypassDirectAttemptCooldownForPrimaryUpgrade(selfCandidates, peerCandidates, selfState, peerState, now, p) {
+		return "primary_upgrade", directAttemptProfile{
+			Lead:          p.PrimaryUpgradeAttemptLead,
+			Window:        p.PrimaryUpgradeAttemptWindow,
+			BurstInterval: p.PrimaryUpgradeAttemptBurstInterval,
+		}
+	}
+	return strings.ToLower(strings.TrimSpace(reason)), p.profileForReason(reason)
+}
+
+func normalizeDirectAttemptProfileName(profile string) string {
+	return strings.ToLower(strings.TrimSpace(profile))
+}
+
+func isPrimaryUpgradeAttemptProfile(profile string) bool {
+	return normalizeDirectAttemptProfileName(profile) == "primary_upgrade"
+}
+
 type directAttemptPair struct {
 	AttemptID       string
 	NodeAID         string
 	NodeBID         string
-	NodeACandidates []string
-	NodeBCandidates []string
+	NodeACandidates []api.DirectAttemptCandidate
+	NodeBCandidates []api.DirectAttemptCandidate
+	Profile         string
 	IssuedAt        time.Time
 	ExecuteAt       time.Time
 	Window          time.Duration
@@ -271,7 +337,7 @@ func pairKey(left, right string) string {
 func (p directAttemptPair) instructionFor(nodeID string) (api.DirectAttemptInstruction, bool) {
 	var (
 		peerNodeID string
-		candidates []string
+		candidates []api.DirectAttemptCandidate
 	)
 	switch strings.TrimSpace(nodeID) {
 	case strings.TrimSpace(p.NodeAID):
@@ -290,7 +356,8 @@ func (p directAttemptPair) instructionFor(nodeID string) (api.DirectAttemptInstr
 		ExecuteAt:     p.ExecuteAt,
 		Window:        p.Window.Milliseconds(),
 		BurstInterval: p.BurstInterval.Milliseconds(),
-		Candidates:    append([]string(nil), candidates...),
+		Candidates:    append([]api.DirectAttemptCandidate(nil), candidates...),
+		Profile:       strings.TrimSpace(p.Profile),
 		Reason:        p.Reason,
 	}, true
 }
@@ -376,9 +443,14 @@ func freshDirectCandidateAddresses(node api.Node, now time.Time) []string {
 }
 
 func freshDirectCandidateAddressesWithPolicy(node api.Node, now time.Time, policy directAttemptPolicy) []string {
-	candidates := session.FreshDirectCandidates(now, node.Endpoints, node.EndpointRecords, policy.EndpointFreshnessWindow)
-	addresses := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
+	candidates := freshDirectAttemptCandidatesWithPolicy(node, now, policy)
+	return dedupeStrings(api.DirectAttemptCandidateAddresses(candidates))
+}
+
+func freshDirectAttemptCandidatesWithPolicy(node api.Node, now time.Time, policy directAttemptPolicy) []api.DirectAttemptCandidate {
+	sessionCandidates := session.FreshDirectCandidates(now, node.Endpoints, node.EndpointRecords, policy.EndpointFreshnessWindow)
+	candidates := make([]api.DirectAttemptCandidate, 0, len(sessionCandidates))
+	for _, candidate := range sessionCandidates {
 		if strings.ToLower(strings.TrimSpace(candidate.Kind)) != "direct" {
 			continue
 		}
@@ -386,9 +458,32 @@ func freshDirectCandidateAddressesWithPolicy(node api.Node, now time.Time, polic
 		if address == "" {
 			continue
 		}
-		addresses = append(addresses, address)
+		candidates = append(candidates, api.DirectAttemptCandidate{
+			Address:    address,
+			Source:     candidate.Source,
+			ObservedAt: candidate.ObservedAt,
+			Priority:   candidate.Priority,
+			Phase:      api.DirectAttemptPhaseForSource(candidate.Source),
+		})
 	}
-	return dedupeStrings(addresses)
+	candidates = api.NormalizeDirectAttemptCandidates(candidates, now)
+	api.SortDirectAttemptCandidates(candidates)
+
+	primary := make([]api.DirectAttemptCandidate, 0, maxPrimaryDirectAttemptCandidates)
+	secondary := make([]api.DirectAttemptCandidate, 0, maxSecondaryDirectAttemptCandidates)
+	for _, candidate := range candidates {
+		switch api.NormalizeDirectAttemptPhase(candidate.Phase, candidate.Source) {
+		case api.DirectAttemptPhasePrimary:
+			if len(primary) < maxPrimaryDirectAttemptCandidates {
+				primary = append(primary, candidate)
+			}
+		default:
+			if len(secondary) < maxSecondaryDirectAttemptCandidates {
+				secondary = append(secondary, candidate)
+			}
+		}
+	}
+	return append(primary, secondary...)
 }
 
 func natSummaryForPeer(report api.NATReport) (mapping string, reachable bool, reportedAt time.Time) {
@@ -410,6 +505,12 @@ func sanitizePeerTransportStates(now time.Time, states []api.PeerTransportState)
 		state.ActiveKind = strings.ToLower(strings.TrimSpace(state.ActiveKind))
 		state.ActiveAddress = strings.TrimSpace(state.ActiveAddress)
 		state.LastDirectAttemptResult = strings.TrimSpace(state.LastDirectAttemptResult)
+		state.LastDirectAttemptProfile = strings.TrimSpace(state.LastDirectAttemptProfile)
+		state.LastDirectAttemptReachedSource = strings.TrimSpace(state.LastDirectAttemptReachedSource)
+		state.LastDirectAttemptPhase = strings.TrimSpace(state.LastDirectAttemptPhase)
+		if state.LastDirectAttemptCandidateCount < 0 {
+			state.LastDirectAttemptCandidateCount = 0
+		}
 		if state.LastDirectSuccessAt.IsZero() {
 			state.LastDirectSuccessAt = time.Time{}
 		} else {
@@ -475,6 +576,17 @@ func directAttemptReason(selfState, peerState api.PeerTransportState, now time.T
 }
 
 func directAttemptReasonWithPolicy(selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy) (string, bool) {
+	return directAttemptReasonWithPolicyCandidates(
+		api.MigrateLegacyDirectAttemptCandidates(nil, time.Time{}, time.Time{}),
+		api.MigrateLegacyDirectAttemptCandidates(nil, time.Time{}, time.Time{}),
+		selfState,
+		peerState,
+		now,
+		policy,
+	)
+}
+
+func directAttemptReasonWithPolicyCandidates(selfCandidates, peerCandidates []api.DirectAttemptCandidate, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy) (string, bool) {
 	selfFresh := transportStateFreshWithPolicy(selfState, now, policy)
 	peerFresh := transportStateFreshWithPolicy(peerState, now, policy)
 	if selfFresh && peerFresh && selfState.ActiveKind == "direct" && peerState.ActiveKind == "direct" {
@@ -484,7 +596,7 @@ func directAttemptReasonWithPolicy(selfState, peerState api.PeerTransportState, 
 		directAttemptCooldownStateWithPolicy(selfState, now, policy),
 		directAttemptCooldownStateWithPolicy(peerState, now, policy),
 	)
-	if cooldownBlock.Blocked {
+	if cooldownBlock.Blocked && !shouldBypassDirectAttemptCooldownForPrimaryUpgrade(selfCandidates, peerCandidates, selfState, peerState, now, policy) {
 		return "", false
 	}
 	suppressionBlock := laterBlockState(
@@ -503,7 +615,60 @@ func directAttemptReasonWithPolicy(selfState, peerState api.PeerTransportState, 
 		}
 		return "relay_active", true
 	}
+	if !hasPrimaryDirectAttemptCandidates(selfCandidates) && !hasPrimaryDirectAttemptCandidates(peerCandidates) {
+		return "", false
+	}
 	return "fresh_endpoints", true
+}
+
+func hasPrimaryDirectAttemptCandidates(candidates []api.DirectAttemptCandidate) bool {
+	for _, candidate := range candidates {
+		if api.NormalizeDirectAttemptPhase(candidate.Phase, candidate.Source) == api.DirectAttemptPhasePrimary {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldBypassDirectAttemptCooldownForPrimaryUpgrade(selfCandidates, peerCandidates []api.DirectAttemptCandidate, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
+	if !hasPrimaryDirectAttemptCandidates(selfCandidates) && !hasPrimaryDirectAttemptCandidates(peerCandidates) {
+		return false
+	}
+	return stateHasPrimaryUpgrade(selfCandidates, selfState, now, policy) || stateHasPrimaryUpgrade(peerCandidates, peerState, now, policy)
+}
+
+func stateHasPrimaryUpgrade(candidates []api.DirectAttemptCandidate, state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
+	if !transportStateFreshWithPolicy(state, now, policy) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(state.LastDirectAttemptResult)) {
+	case "timeout", "relay_kept":
+	default:
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(state.LastDirectAttemptPhase), api.DirectAttemptPhaseSecondary) {
+		return false
+	}
+	attemptAt := state.LastDirectAttemptAt.UTC()
+	if attemptAt.IsZero() {
+		return false
+	}
+	return hasNewerPrimaryCandidateSince(candidates, attemptAt)
+}
+
+func hasNewerPrimaryCandidateSince(candidates []api.DirectAttemptCandidate, since time.Time) bool {
+	if since.IsZero() {
+		return false
+	}
+	for _, candidate := range candidates {
+		if api.NormalizeDirectAttemptPhase(candidate.Phase, candidate.Source) != api.DirectAttemptPhasePrimary {
+			continue
+		}
+		if !candidate.ObservedAt.IsZero() && candidate.ObservedAt.After(since) {
+			return true
+		}
+	}
+	return false
 }
 
 func directAttemptSuppressedWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
@@ -526,7 +691,7 @@ func shouldUseManualRecover(state api.PeerTransportState, now time.Time, policy 
 	if attemptAt.IsZero() {
 		attemptAt = state.ReportedAt.UTC()
 	}
-	return now.Sub(attemptAt) >= policy.manualRecoverAfterForResult(state.LastDirectAttemptResult)
+	return now.Sub(attemptAt) >= policy.manualRecoverAfterForAttempt(state.LastDirectAttemptResult, state.LastDirectAttemptProfile)
 }
 
 func (p directAttemptPolicy) cooldownForResult(result string) time.Duration {
@@ -546,6 +711,13 @@ func (p directAttemptPolicy) cooldownForResult(result string) time.Duration {
 	}
 }
 
+func (p directAttemptPolicy) cooldownForAttempt(result, profile string) time.Duration {
+	if isPrimaryUpgradeAttemptProfile(profile) && p.PrimaryUpgradeAttemptCooldown > 0 {
+		return p.PrimaryUpgradeAttemptCooldown
+	}
+	return p.cooldownForResult(result)
+}
+
 func (p directAttemptPolicy) manualRecoverAfterForResult(result string) time.Duration {
 	switch strings.ToLower(strings.TrimSpace(result)) {
 	case "timeout":
@@ -561,6 +733,13 @@ func (p directAttemptPolicy) manualRecoverAfterForResult(result string) time.Dur
 	default:
 		return p.DirectAttemptManualRecoverAfter
 	}
+}
+
+func (p directAttemptPolicy) manualRecoverAfterForAttempt(result, profile string) time.Duration {
+	if isPrimaryUpgradeAttemptProfile(profile) && p.PrimaryUpgradeAttemptManualRecoverAfter > 0 {
+		return p.PrimaryUpgradeAttemptManualRecoverAfter
+	}
+	return p.manualRecoverAfterForResult(result)
 }
 
 func (p directAttemptPolicy) suppressAfterForResult(result string) int {
@@ -580,6 +759,13 @@ func (p directAttemptPolicy) suppressAfterForResult(result string) int {
 	}
 }
 
+func (p directAttemptPolicy) suppressAfterForAttempt(result, profile string) int {
+	if isPrimaryUpgradeAttemptProfile(profile) && p.PrimaryUpgradeAttemptSuppressAfter > 0 {
+		return p.PrimaryUpgradeAttemptSuppressAfter
+	}
+	return p.suppressAfterForResult(result)
+}
+
 func (p directAttemptPolicy) suppressWindowForResult(result string) time.Duration {
 	switch strings.ToLower(strings.TrimSpace(result)) {
 	case "timeout":
@@ -595,6 +781,13 @@ func (p directAttemptPolicy) suppressWindowForResult(result string) time.Duratio
 	default:
 		return 0
 	}
+}
+
+func (p directAttemptPolicy) suppressWindowForAttempt(result, profile string) time.Duration {
+	if isPrimaryUpgradeAttemptProfile(profile) && p.PrimaryUpgradeAttemptSuppressWindow > 0 {
+		return p.PrimaryUpgradeAttemptSuppressWindow
+	}
+	return p.suppressWindowForResult(result)
 }
 
 func (p directAttemptPolicy) suppressedProbeIntervalForResult(result string) time.Duration {
@@ -614,6 +807,13 @@ func (p directAttemptPolicy) suppressedProbeIntervalForResult(result string) tim
 	}
 }
 
+func (p directAttemptPolicy) suppressedProbeIntervalForAttempt(result, profile string) time.Duration {
+	if isPrimaryUpgradeAttemptProfile(profile) && p.PrimaryUpgradeAttemptSuppressedProbeInterval > 0 {
+		return p.PrimaryUpgradeAttemptSuppressedProbeInterval
+	}
+	return p.suppressedProbeIntervalForResult(result)
+}
+
 func (p directAttemptPolicy) suppressedProbeLimitForResult(result string) int {
 	switch strings.ToLower(strings.TrimSpace(result)) {
 	case "timeout":
@@ -629,6 +829,13 @@ func (p directAttemptPolicy) suppressedProbeLimitForResult(result string) int {
 	default:
 		return 0
 	}
+}
+
+func (p directAttemptPolicy) suppressedProbeLimitForAttempt(result, profile string) int {
+	if isPrimaryUpgradeAttemptProfile(profile) && p.PrimaryUpgradeAttemptSuppressedProbeLimit > 0 {
+		return p.PrimaryUpgradeAttemptSuppressedProbeLimit
+	}
+	return p.suppressedProbeLimitForResult(result)
 }
 
 func (p directAttemptPolicy) suppressedProbeRefillIntervalForResult(result string) time.Duration {
@@ -648,11 +855,18 @@ func (p directAttemptPolicy) suppressedProbeRefillIntervalForResult(result strin
 	}
 }
 
+func (p directAttemptPolicy) suppressedProbeRefillIntervalForAttempt(result, profile string) time.Duration {
+	if isPrimaryUpgradeAttemptProfile(profile) && p.PrimaryUpgradeAttemptSuppressedProbeRefillInterval > 0 {
+		return p.PrimaryUpgradeAttemptSuppressedProbeRefillInterval
+	}
+	return p.suppressedProbeRefillIntervalForResult(result)
+}
+
 func directAttemptCooldownStateWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) directAttemptBlockState {
 	if !transportStateFreshWithPolicy(state, now, policy) {
 		return directAttemptBlockState{}
 	}
-	cooldown := policy.cooldownForResult(state.LastDirectAttemptResult)
+	cooldown := policy.cooldownForAttempt(state.LastDirectAttemptResult, state.LastDirectAttemptProfile)
 	if cooldown <= 0 {
 		return directAttemptBlockState{}
 	}
@@ -675,8 +889,8 @@ func directAttemptSuppressionStateWithPolicy(state api.PeerTransportState, now t
 	if !transportStateFreshWithPolicy(state, now, policy) {
 		return directAttemptBlockState{}
 	}
-	threshold := policy.suppressAfterForResult(state.LastDirectAttemptResult)
-	window := policy.suppressWindowForResult(state.LastDirectAttemptResult)
+	threshold := policy.suppressAfterForAttempt(state.LastDirectAttemptResult, state.LastDirectAttemptProfile)
+	window := policy.suppressWindowForAttempt(state.LastDirectAttemptResult, state.LastDirectAttemptProfile)
 	if threshold <= 0 || window <= 0 {
 		return directAttemptBlockState{}
 	}
@@ -694,12 +908,12 @@ func directAttemptSuppressionStateWithPolicy(state api.PeerTransportState, now t
 	if !now.Before(until) {
 		return directAttemptBlockState{}
 	}
-	probeLimit := policy.suppressedProbeLimitForResult(state.LastDirectAttemptResult)
+	probeLimit := policy.suppressedProbeLimitForAttempt(state.LastDirectAttemptResult, state.LastDirectAttemptProfile)
 	extraFailures := state.ConsecutiveDirectFailures - threshold
 	if extraFailures < 0 {
 		extraFailures = 0
 	}
-	refillInterval := policy.suppressedProbeRefillIntervalForResult(state.LastDirectAttemptResult)
+	refillInterval := policy.suppressedProbeRefillIntervalForAttempt(state.LastDirectAttemptResult, state.LastDirectAttemptProfile)
 	refilled := 0
 	if refillInterval > 0 && extraFailures > 0 {
 		refilled = int(now.Sub(attemptAt) / refillInterval)
@@ -723,7 +937,7 @@ func directAttemptSuppressionStateWithPolicy(state api.PeerTransportState, now t
 		}
 	}
 	nextProbeAt := time.Time{}
-	probeInterval := policy.suppressedProbeIntervalForResult(state.LastDirectAttemptResult)
+	probeInterval := policy.suppressedProbeIntervalForAttempt(state.LastDirectAttemptResult, state.LastDirectAttemptProfile)
 	if probeInterval > 0 && (!probeLimited || probeRemaining > 0) {
 		candidate := attemptAt.Add(probeInterval)
 		if candidate.Before(until) {
@@ -764,6 +978,7 @@ func directAttemptBlockStateWithPolicy(state api.PeerTransportState, now time.Ti
 func applyDirectAttemptTrace(recoveryState api.PeerRecoveryState, attempt directAttemptPair) api.PeerRecoveryState {
 	recoveryState.LastIssuedAttemptID = strings.TrimSpace(attempt.AttemptID)
 	recoveryState.LastIssuedAttemptReason = strings.TrimSpace(attempt.Reason)
+	recoveryState.LastIssuedAttemptProfile = strings.TrimSpace(attempt.Profile)
 	recoveryState.LastIssuedAttemptAt = attempt.IssuedAt
 	recoveryState.LastIssuedAttemptExecuteAt = attempt.ExecuteAt
 	return recoveryState
@@ -791,6 +1006,22 @@ func directAttemptDecisionNextAt(selfState, peerState api.PeerTransportState, no
 }
 
 func directAttemptDecisionForPeer(selfNode, peerNode api.Node, selfCandidates, peerCandidates []string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) directAttemptDecision {
+	return directAttemptDecisionForPeerCandidates(
+		selfNode,
+		peerNode,
+		api.MigrateLegacyDirectAttemptCandidates(selfCandidates, now, now),
+		api.MigrateLegacyDirectAttemptCandidates(peerCandidates, now, now),
+		selfState,
+		peerState,
+		now,
+		policy,
+		latestAttempt,
+	)
+}
+
+func directAttemptDecisionForPeerCandidates(selfNode, peerNode api.Node, selfCandidates, peerCandidates []api.DirectAttemptCandidate, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) directAttemptDecision {
+	selfCandidateAddresses := api.DirectAttemptCandidateAddresses(selfCandidates)
+	peerCandidateAddresses := api.DirectAttemptCandidateAddresses(peerCandidates)
 	block := laterBlockState(
 		directAttemptBlockStateWithPolicy(selfState, now, policy),
 		directAttemptBlockStateWithPolicy(peerState, now, policy),
@@ -826,14 +1057,14 @@ func directAttemptDecisionForPeer(selfNode, peerNode api.Node, selfCandidates, p
 			At:     now,
 		}
 	}
-	if len(selfCandidates) == 0 {
+	if len(selfCandidateAddresses) == 0 {
 		return directAttemptDecision{
 			Status: "local_no_direct_candidate",
 			Reason: "local_node_has_no_fresh_direct_candidate",
 			At:     now,
 		}
 	}
-	if len(peerCandidates) == 0 {
+	if len(peerCandidateAddresses) == 0 {
 		return directAttemptDecision{
 			Status: "peer_no_direct_candidate",
 			Reason: "peer_node_has_no_fresh_direct_candidate",
@@ -849,12 +1080,20 @@ func directAttemptDecisionForPeer(selfNode, peerNode api.Node, selfCandidates, p
 			At:     now,
 		}
 	}
-	if reason, schedule := directAttemptReasonWithPolicy(selfState, peerState, now, policy); schedule {
+	if reason, schedule := directAttemptReasonWithPolicyCandidates(selfCandidates, peerCandidates, selfState, peerState, now, policy); schedule {
 		return directAttemptDecision{
 			Status: "eligible",
 			Reason: reason,
 			At:     now,
 			NextAt: now,
+		}
+	}
+	if !hasPrimaryDirectAttemptCandidates(selfCandidates) && !hasPrimaryDirectAttemptCandidates(peerCandidates) {
+		return directAttemptDecision{
+			Status: "idle",
+			Reason: "secondary_candidates_only",
+			At:     now,
+			NextAt: nextAt,
 		}
 	}
 	return directAttemptDecision{
@@ -866,11 +1105,25 @@ func directAttemptDecisionForPeer(selfNode, peerNode api.Node, selfCandidates, p
 }
 
 func recoveryStateForPeer(selfNode, peerNode api.Node, selfCandidates, peerCandidates []string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) api.PeerRecoveryState {
+	return recoveryStateForPeerCandidates(
+		selfNode,
+		peerNode,
+		api.MigrateLegacyDirectAttemptCandidates(selfCandidates, now, now),
+		api.MigrateLegacyDirectAttemptCandidates(peerCandidates, now, now),
+		selfState,
+		peerState,
+		now,
+		policy,
+		latestAttempt,
+	)
+}
+
+func recoveryStateForPeerCandidates(selfNode, peerNode api.Node, selfCandidates, peerCandidates []api.DirectAttemptCandidate, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) api.PeerRecoveryState {
 	block := laterBlockState(
 		directAttemptBlockStateWithPolicy(selfState, now, policy),
 		directAttemptBlockStateWithPolicy(peerState, now, policy),
 	)
-	decision := directAttemptDecisionForPeer(selfNode, peerNode, selfCandidates, peerCandidates, selfState, peerState, now, policy, latestAttempt)
+	decision := directAttemptDecisionForPeerCandidates(selfNode, peerNode, selfCandidates, peerCandidates, selfState, peerState, now, policy, latestAttempt)
 	recoveryState := api.PeerRecoveryState{
 		PeerNodeID:     strings.TrimSpace(peerNode.ID),
 		Blocked:        block.Blocked,
@@ -1045,11 +1298,11 @@ func dedupeStrings(values []string) []string {
 	return result
 }
 
-func newDirectAttemptPair(now time.Time, nodeA api.Node, nodeB api.Node, nodeACandidates, nodeBCandidates []string, reason string, policy directAttemptPolicy) directAttemptPair {
+func newDirectAttemptPair(now time.Time, nodeA api.Node, nodeB api.Node, nodeACandidates, nodeBCandidates []api.DirectAttemptCandidate, reason string, policy directAttemptPolicy, nodeAState, nodeBState api.PeerTransportState) directAttemptPair {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	profile := policy.profileForReason(reason)
+	profileName, profile := policy.profileForAttempt(reason, nodeACandidates, nodeBCandidates, nodeAState, nodeBState, now)
 	executeAt := now.Add(profile.Lead)
 	window := profile.Window
 	burstInterval := profile.BurstInterval
@@ -1063,8 +1316,9 @@ func newDirectAttemptPair(now time.Time, nodeA api.Node, nodeB api.Node, nodeACa
 		AttemptID:       attemptID,
 		NodeAID:         nodeA.ID,
 		NodeBID:         nodeB.ID,
-		NodeACandidates: dedupeStrings(nodeACandidates),
-		NodeBCandidates: dedupeStrings(nodeBCandidates),
+		NodeACandidates: api.NormalizeDirectAttemptCandidates(nodeACandidates, now),
+		NodeBCandidates: api.NormalizeDirectAttemptCandidates(nodeBCandidates, now),
+		Profile:         strings.TrimSpace(profileName),
 		IssuedAt:        now,
 		ExecuteAt:       executeAt,
 		Window:          window,

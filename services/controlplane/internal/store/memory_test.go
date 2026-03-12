@@ -210,6 +210,18 @@ func TestMemoryStoreHeartbeatPersistsNATSummaryAndSchedulesDirectAttempt(t *test
 		EndpointRecords: []api.EndpointObservation{
 			{Address: "203.0.113.10:51820", Source: "stun"},
 		},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:                      nodeA.Node.ID,
+			ActiveKind:                      "relay",
+			ActiveAddress:                   "relay-ap-1.example.net:3478",
+			ReportedAt:                      time.Now().UTC(),
+			LastDirectAttemptAt:             time.Now().UTC().Add(-2 * time.Second),
+			LastDirectAttemptResult:         "success",
+			LastDirectAttemptProfile:        "primary_upgrade",
+			LastDirectAttemptReachedSource:  "stun",
+			LastDirectAttemptPhase:          api.DirectAttemptPhasePrimary,
+			LastDirectAttemptCandidateCount: 2,
+		}},
 		NATReport: api.NATReport{
 			GeneratedAt:              time.Now().UTC(),
 			MappingBehavior:          "varying_port",
@@ -240,8 +252,11 @@ func TestMemoryStoreHeartbeatPersistsNATSummaryAndSchedulesDirectAttempt(t *test
 	if bootstrap.Peers[0].NATMappingBehavior != "varying_port" || !bootstrap.Peers[0].NATReachable || bootstrap.Peers[0].NATReportedAt.IsZero() {
 		t.Fatalf("expected NAT summary on bootstrap peer, got %#v", bootstrap.Peers[0])
 	}
-	if bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptID == "" || bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptReason == "" {
+	if bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptID == "" || bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptReason == "" || bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptProfile == "" {
 		t.Fatalf("expected bootstrap peer to expose latest issued direct attempt trace, got %#v", bootstrap.Peers[0])
+	}
+	if bootstrap.Peers[0].ObservedLastDirectAttemptProfile != "primary_upgrade" || bootstrap.Peers[0].ObservedLastDirectAttemptReachedSource != "stun" || bootstrap.Peers[0].ObservedLastDirectAttemptPhase != api.DirectAttemptPhasePrimary || bootstrap.Peers[0].ObservedLastDirectAttemptCandidateCount != 2 {
+		t.Fatalf("expected bootstrap peer to expose attempt phase/source/count, got %#v", bootstrap.Peers[0])
 	}
 }
 

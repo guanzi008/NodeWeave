@@ -21,10 +21,12 @@ type Config struct {
 }
 
 type Candidate struct {
-	Kind     string `json:"kind"`
-	Address  string `json:"address"`
-	Region   string `json:"region,omitempty"`
-	Priority int    `json:"priority"`
+	Kind       string    `json:"kind"`
+	Address    string    `json:"address"`
+	Region     string    `json:"region,omitempty"`
+	Source     string    `json:"source,omitempty"`
+	ObservedAt time.Time `json:"observed_at,omitempty"`
+	Priority   int       `json:"priority"`
 }
 
 type Peer struct {
@@ -143,9 +145,11 @@ func DirectCandidates(endpoints []string, observations []api.EndpointObservation
 	candidates := make([]Candidate, 0, len(records))
 	for idx, record := range records {
 		candidates = append(candidates, Candidate{
-			Kind:     "direct",
-			Address:  record.Address,
-			Priority: 1000 - idx,
+			Kind:       "direct",
+			Address:    record.Address,
+			Source:     record.Source,
+			ObservedAt: record.ObservedAt,
+			Priority:   1000 - idx,
 		})
 	}
 	if len(candidates) > 0 {
@@ -159,9 +163,11 @@ func DirectCandidates(endpoints []string, observations []api.EndpointObservation
 			continue
 		}
 		candidates = append(candidates, Candidate{
-			Kind:     "direct",
-			Address:  endpoint,
-			Priority: 1000 - idx,
+			Kind:       "direct",
+			Address:    endpoint,
+			Source:     "heartbeat",
+			ObservedAt: time.Now().UTC(),
+			Priority:   1000 - idx,
 		})
 	}
 	return candidates

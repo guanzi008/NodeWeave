@@ -21,6 +21,15 @@ import (
 	"nodeweave/packages/runtime/go/session"
 )
 
+func agentDirectAttemptCandidate(address string) api.DirectAttemptCandidate {
+	return api.DirectAttemptCandidate{
+		Address:  address,
+		Source:   "heartbeat",
+		Priority: 1000,
+		Phase:    api.DirectAttemptPhasePrimary,
+	}
+}
+
 func TestReloadDataplaneKeepsRuntimeWhenSignatureUnchanged(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := config.Config{
@@ -534,7 +543,7 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	if _, err := transportA.ExecuteDirectAttempt(context.Background(), secureudp.DirectAttempt{
 		AttemptID:     "attempt-heartbeat-success",
 		PeerNodeID:    "node-b",
-		Candidates:    []string{transportB.Address()},
+		Candidates:    []api.DirectAttemptCandidate{agentDirectAttemptCandidate(transportB.Address())},
 		Window:        300 * time.Millisecond,
 		BurstInterval: 50 * time.Millisecond,
 		Reason:        "relay_active",
@@ -572,6 +581,7 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 				ProbeRefillAt:              time.Now().UTC().Add(40 * time.Second),
 				LastIssuedAttemptID:        "attempt-node-1-node-b-1",
 				LastIssuedAttemptReason:    "relay_active",
+				LastIssuedAttemptProfile:   "primary_upgrade",
 				LastIssuedAttemptAt:        time.Now().UTC().Add(-2 * time.Second),
 				LastIssuedAttemptExecuteAt: time.Now().UTC().Add(-1500 * time.Millisecond),
 				DecisionStatus:             "blocked",
@@ -600,6 +610,19 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 			},
 			NodeToken: "node-token",
 		},
+		attemptReports: map[string]state.DirectAttemptReportEntry{
+			"attempt-heartbeat-success": {
+				AttemptID:     "attempt-heartbeat-success",
+				PeerNodeID:    "node-b",
+				Profile:       "primary_upgrade",
+				Result:        "success",
+				Phase:         api.DirectAttemptPhasePrimary,
+				ReachedSource: "heartbeat",
+				Candidates:    []api.DirectAttemptCandidate{agentDirectAttemptCandidate(transportB.Address())},
+				CompletedAt:   time.Now().UTC(),
+				LastUpdatedAt: time.Now().UTC(),
+			},
+		},
 		dataplaneRuntime: &activeDataplane{
 			secureUDP: transportA,
 		},
@@ -620,6 +643,9 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	if received.PeerTransportStates[0].ConsecutiveDirectFailures != 0 {
 		t.Fatalf("expected direct success to reset failure budget, got %#v", received.PeerTransportStates)
 	}
+	if received.PeerTransportStates[0].LastDirectAttemptProfile != "primary_upgrade" || received.PeerTransportStates[0].LastDirectAttemptReachedSource != "heartbeat" || received.PeerTransportStates[0].LastDirectAttemptPhase != api.DirectAttemptPhasePrimary || received.PeerTransportStates[0].LastDirectAttemptCandidateCount != 1 {
+		t.Fatalf("expected phase/source/count in peer transport state, got %#v", received.PeerTransportStates)
+	}
 	recoveryStates, err := state.LoadRecoveryStates(filepath.Join(tmpDir, "recovery.json"))
 	if err != nil {
 		t.Fatalf("load recovery states: %v", err)
@@ -636,7 +662,7 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	if recoveryStates[0].ProbeRefillAt.IsZero() {
 		t.Fatalf("expected persisted recovery probe refill time, got %#v", recoveryStates)
 	}
-	if recoveryStates[0].LastIssuedAttemptID == "" || recoveryStates[0].LastIssuedAttemptReason == "" || recoveryStates[0].LastIssuedAttemptAt.IsZero() || recoveryStates[0].LastIssuedAttemptExecuteAt.IsZero() {
+	if recoveryStates[0].LastIssuedAttemptID == "" || recoveryStates[0].LastIssuedAttemptReason == "" || recoveryStates[0].LastIssuedAttemptProfile != "primary_upgrade" || recoveryStates[0].LastIssuedAttemptAt.IsZero() || recoveryStates[0].LastIssuedAttemptExecuteAt.IsZero() {
 		t.Fatalf("expected persisted recovery state to include latest issued attempt trace, got %#v", recoveryStates)
 	}
 	if recoveryStates[0].DecisionStatus != "blocked" || recoveryStates[0].DecisionReason != "suppressed_timeout_budget" || recoveryStates[0].DecisionAt.IsZero() || recoveryStates[0].DecisionNextAt.IsZero() {
@@ -1500,7 +1526,7 @@ func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) 
 			ExecuteAt:     time.Now().UTC(),
 			Window:        400,
 			BurstInterval: 50,
-			Candidates:    []string{transportB.Address()},
+			Candidates:    []api.DirectAttemptCandidate{agentDirectAttemptCandidate(transportB.Address())},
 			Reason:        "fresh_endpoints",
 		},
 	})
@@ -1532,6 +1558,9 @@ func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) 
 	}
 	if report.Entries[0].IssuedAt.IsZero() {
 		t.Fatalf("expected direct attempt report entry to retain issued_at, got %#v", report.Entries[0])
+	}
+	if report.Entries[0].Phase != api.DirectAttemptPhasePrimary || report.Entries[0].ReachedSource != "heartbeat" {
+		t.Fatalf("expected completed direct attempt report to retain phase/source, got %#v", report.Entries[0])
 	}
 
 	cancel()
@@ -1599,7 +1628,7 @@ func TestScheduleDirectAttemptsPersistsWithoutTransportAndRestoresLater(t *testi
 		ExecuteAt:     time.Now().UTC().Add(150 * time.Millisecond),
 		Window:        800,
 		BurstInterval: 50,
-		Candidates:    []string{transportB.Address()},
+		Candidates:    []api.DirectAttemptCandidate{agentDirectAttemptCandidate(transportB.Address())},
 		Reason:        "manual_recover",
 	}
 	svc.scheduleDirectAttempts([]api.DirectAttemptInstruction{instruction})
@@ -1608,7 +1637,7 @@ func TestScheduleDirectAttemptsPersistsWithoutTransportAndRestoresLater(t *testi
 	if err != nil {
 		t.Fatalf("load persisted direct attempts without transport: %v", err)
 	}
-	if len(attempts) != 1 || attempts[0].AttemptID != instruction.AttemptID || len(attempts[0].Candidates) != 1 || attempts[0].Candidates[0] != transportB.Address() {
+	if len(attempts) != 1 || attempts[0].AttemptID != instruction.AttemptID || len(attempts[0].Candidates) != 1 || attempts[0].Candidates[0].Address != transportB.Address() {
 		t.Fatalf("expected pending direct attempt to persist, got %#v", attempts)
 	}
 	report, err := state.LoadDirectAttemptReport(svc.cfg.DirectAttemptReportPath)
@@ -1689,7 +1718,7 @@ func TestScheduleDirectAttemptsReplacesOlderAttemptForSamePeer(t *testing.T) {
 		ExecuteAt:     time.Now().UTC().Add(2 * time.Second),
 		Window:        500,
 		BurstInterval: 50,
-		Candidates:    []string{"203.0.113.10:51820"},
+		Candidates:    []api.DirectAttemptCandidate{agentDirectAttemptCandidate("203.0.113.10:51820")},
 		Reason:        "relay_active",
 	}
 	second := api.DirectAttemptInstruction{
@@ -1699,7 +1728,7 @@ func TestScheduleDirectAttemptsReplacesOlderAttemptForSamePeer(t *testing.T) {
 		ExecuteAt:     time.Now().UTC().Add(3 * time.Second),
 		Window:        500,
 		BurstInterval: 50,
-		Candidates:    []string{"203.0.113.11:51820"},
+		Candidates:    []api.DirectAttemptCandidate{agentDirectAttemptCandidate("203.0.113.11:51820")},
 		Reason:        "manual_recover",
 	}
 
@@ -1763,7 +1792,7 @@ func TestSetRecoveryStatesCancelsSupersededPendingAttempt(t *testing.T) {
 		ExecuteAt:     time.Now().UTC().Add(1500 * time.Millisecond),
 		Window:        600,
 		BurstInterval: 50,
-		Candidates:    []string{"203.0.113.10:51820"},
+		Candidates:    []api.DirectAttemptCandidate{agentDirectAttemptCandidate("203.0.113.10:51820")},
 		Reason:        "relay_active",
 	}
 
@@ -1819,7 +1848,7 @@ func TestScheduleDirectAttemptsMarksExpiredAttemptsInReport(t *testing.T) {
 			ExecuteAt:     time.Now().UTC().Add(-2 * time.Second),
 			Window:        200,
 			BurstInterval: 50,
-			Candidates:    []string{"203.0.113.10:51820"},
+			Candidates:    []api.DirectAttemptCandidate{agentDirectAttemptCandidate("203.0.113.10:51820")},
 			Reason:        "manual_recover",
 		},
 	})

@@ -1,7 +1,9 @@
 package state
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +16,15 @@ import (
 	"nodeweave/packages/runtime/go/session"
 	"nodeweave/packages/runtime/go/stun"
 )
+
+func stateDirectAttemptCandidate(address string) api.DirectAttemptCandidate {
+	return api.DirectAttemptCandidate{
+		Address:  address,
+		Source:   "heartbeat",
+		Priority: 1000,
+		Phase:    api.DirectAttemptPhasePrimary,
+	}
+}
 
 func TestSaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -301,7 +312,7 @@ func TestSaveAndLoadDirectAttempts(t *testing.T) {
 			ExecuteAt:     time.Now().UTC().Add(5 * time.Second),
 			Window:        600,
 			BurstInterval: 80,
-			Candidates:    []string{"203.0.113.10:51820"},
+			Candidates:    []api.DirectAttemptCandidate{stateDirectAttemptCandidate("203.0.113.10:51820")},
 			Reason:        "manual_recover",
 		},
 	}
@@ -331,12 +342,13 @@ func TestSaveAndLoadDirectAttemptReport(t *testing.T) {
 				PeerNodeID:     "node_2",
 				IssuedAt:       time.Now().UTC().Add(-1 * time.Second),
 				ExecuteAt:      time.Now().UTC().Add(5 * time.Second),
+				Profile:        "primary_upgrade",
 				Status:         "waiting_transport",
 				Result:         "queued",
 				WaitReason:     "transport_unavailable",
 				QueuedAt:       time.Now().UTC(),
 				LastUpdatedAt:  time.Now().UTC(),
-				Candidates:     []string{"203.0.113.10:51820"},
+				Candidates:     []api.DirectAttemptCandidate{stateDirectAttemptCandidate("203.0.113.10:51820")},
 				ReachedAddress: "",
 				ActiveAddress:  "",
 			},
@@ -351,8 +363,89 @@ func TestSaveAndLoadDirectAttemptReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load direct attempt report: %v", err)
 	}
-	if len(got.Entries) != 1 || got.Entries[0].AttemptID != want.Entries[0].AttemptID || got.Entries[0].WaitReason != want.Entries[0].WaitReason {
+	if len(got.Entries) != 1 || got.Entries[0].AttemptID != want.Entries[0].AttemptID || got.Entries[0].WaitReason != want.Entries[0].WaitReason || got.Entries[0].Profile != want.Entries[0].Profile {
 		t.Fatalf("unexpected direct attempt report roundtrip: %#v", got)
+	}
+}
+
+func TestLoadDirectAttemptsMigratesLegacyCandidates(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "direct-attempts-legacy.json")
+	raw := []byte(`[
+  {
+    "attempt_id": "attempt-legacy",
+    "peer_node_id": "node_2",
+    "issued_at": "2026-03-12T10:00:00Z",
+    "execute_at": "2026-03-12T10:00:05Z",
+    "window": 600,
+    "burst_interval": 80,
+    "candidates": ["203.0.113.10:51820"],
+    "profile": "primary_upgrade",
+    "reason": "manual_recover"
+  }
+]`)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write legacy direct attempts: %v", err)
+	}
+
+	got, err := LoadDirectAttempts(path)
+	if err != nil {
+		t.Fatalf("load legacy direct attempts: %v", err)
+	}
+	if len(got) != 1 || len(got[0].Candidates) != 1 {
+		t.Fatalf("unexpected migrated direct attempts: %#v", got)
+	}
+	candidate := got[0].Candidates[0]
+	if candidate.Address != "203.0.113.10:51820" || candidate.Source != "heartbeat" || candidate.Phase != api.DirectAttemptPhasePrimary {
+		t.Fatalf("unexpected migrated candidate: %#v", candidate)
+	}
+	if got[0].Profile != "primary_upgrade" {
+		t.Fatalf("expected direct attempt profile to roundtrip, got %#v", got)
+	}
+
+	if err := SaveDirectAttempts(path, got); err != nil {
+		t.Fatalf("save migrated direct attempts: %v", err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migrated direct attempts: %v", err)
+	}
+	if !strings.Contains(string(saved), "\"address\"") {
+		t.Fatalf("expected migrated direct attempts to persist object candidates, got %s", string(saved))
+	}
+}
+
+func TestLoadDirectAttemptReportMigratesLegacyCandidates(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "direct-attempt-report-legacy.json")
+	raw := []byte(`{
+  "generated_at": "2026-03-12T10:00:00Z",
+  "entries": [
+    {
+      "attempt_id": "attempt-legacy",
+      "peer_node_id": "node_2",
+      "issued_at": "2026-03-12T10:00:00Z",
+      "execute_at": "2026-03-12T10:00:05Z",
+      "candidates": ["203.0.113.10:51820"],
+      "status": "queued",
+      "result": "queued"
+    }
+  ]
+}`)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write legacy direct attempt report: %v", err)
+	}
+
+	got, err := LoadDirectAttemptReport(path)
+	if err != nil {
+		t.Fatalf("load legacy direct attempt report: %v", err)
+	}
+	if len(got.Entries) != 1 || len(got.Entries[0].Candidates) != 1 {
+		t.Fatalf("unexpected migrated direct attempt report: %#v", got)
+	}
+	candidate := got.Entries[0].Candidates[0]
+	if candidate.Address != "203.0.113.10:51820" || candidate.Source != "heartbeat" || candidate.Phase != api.DirectAttemptPhasePrimary {
+		t.Fatalf("unexpected migrated report candidate: %#v", candidate)
 	}
 }
 

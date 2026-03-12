@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"nodeweave/packages/contracts/go/api"
 	"nodeweave/packages/runtime/go/dataplane"
 	"nodeweave/packages/runtime/go/session"
 	"nodeweave/packages/runtime/go/stun"
@@ -27,6 +28,8 @@ const (
 	envelopeTypeHello    = "hello"
 	envelopeTypeHelloAck = "hello_ack"
 	envelopeTypeData     = "data"
+
+	directAttemptCandidateSpacing = 10 * time.Millisecond
 )
 
 type Config struct {
@@ -57,33 +60,36 @@ type Report struct {
 }
 
 type PeerStatus struct {
-	NodeID                    string            `json:"node_id"`
-	ActiveAddress             string            `json:"active_address,omitempty"`
-	ActiveKind                string            `json:"active_kind,omitempty"`
-	ActiveSince               time.Time         `json:"active_since,omitempty"`
-	LastPathChangeAt          time.Time         `json:"last_path_change_at,omitempty"`
-	LastDirectTryAt           time.Time         `json:"last_direct_try_at,omitempty"`
-	NextDirectRetryAt         time.Time         `json:"next_direct_retry_at,omitempty"`
-	LastEstablishedAt         time.Time         `json:"last_established_at,omitempty"`
-	LastSendSuccessAt         time.Time         `json:"last_send_success_at,omitempty"`
-	LastReceiveAt             time.Time         `json:"last_receive_at,omitempty"`
-	LastSendErrorAt           time.Time         `json:"last_send_error_at,omitempty"`
-	LastSendError             string            `json:"last_send_error,omitempty"`
-	LastDirectAttemptID       string            `json:"last_direct_attempt_id,omitempty"`
-	LastDirectAttemptReason   string            `json:"last_direct_attempt_reason,omitempty"`
-	LastDirectAttemptAt       time.Time         `json:"last_direct_attempt_at,omitempty"`
-	LastDirectAttemptResult   string            `json:"last_direct_attempt_result,omitempty"`
-	LastDirectSuccessAt       time.Time         `json:"last_direct_success_at,omitempty"`
-	ConsecutiveDirectFailures int               `json:"consecutive_direct_failures,omitempty"`
-	SessionsEstablished       int               `json:"sessions_established,omitempty"`
-	HandshakeTimeouts         int               `json:"handshake_timeouts,omitempty"`
-	RelayFallbacks            int               `json:"relay_fallbacks,omitempty"`
-	DirectRecoveries          int               `json:"direct_recoveries,omitempty"`
-	SentPackets               int               `json:"sent_packets,omitempty"`
-	SentBytes                 int64             `json:"sent_bytes,omitempty"`
-	ReceivedPackets           int               `json:"received_packets,omitempty"`
-	ReceivedBytes             int64             `json:"received_bytes,omitempty"`
-	Candidates                []CandidateStatus `json:"candidates"`
+	NodeID                          string            `json:"node_id"`
+	ActiveAddress                   string            `json:"active_address,omitempty"`
+	ActiveKind                      string            `json:"active_kind,omitempty"`
+	ActiveSince                     time.Time         `json:"active_since,omitempty"`
+	LastPathChangeAt                time.Time         `json:"last_path_change_at,omitempty"`
+	LastDirectTryAt                 time.Time         `json:"last_direct_try_at,omitempty"`
+	NextDirectRetryAt               time.Time         `json:"next_direct_retry_at,omitempty"`
+	LastEstablishedAt               time.Time         `json:"last_established_at,omitempty"`
+	LastSendSuccessAt               time.Time         `json:"last_send_success_at,omitempty"`
+	LastReceiveAt                   time.Time         `json:"last_receive_at,omitempty"`
+	LastSendErrorAt                 time.Time         `json:"last_send_error_at,omitempty"`
+	LastSendError                   string            `json:"last_send_error,omitempty"`
+	LastDirectAttemptID             string            `json:"last_direct_attempt_id,omitempty"`
+	LastDirectAttemptReason         string            `json:"last_direct_attempt_reason,omitempty"`
+	LastDirectAttemptAt             time.Time         `json:"last_direct_attempt_at,omitempty"`
+	LastDirectAttemptResult         string            `json:"last_direct_attempt_result,omitempty"`
+	LastDirectAttemptReachedSource  string            `json:"last_direct_attempt_reached_source,omitempty"`
+	LastDirectAttemptPhase          string            `json:"last_direct_attempt_phase,omitempty"`
+	LastDirectAttemptCandidateCount int               `json:"last_direct_attempt_candidate_count,omitempty"`
+	LastDirectSuccessAt             time.Time         `json:"last_direct_success_at,omitempty"`
+	ConsecutiveDirectFailures       int               `json:"consecutive_direct_failures,omitempty"`
+	SessionsEstablished             int               `json:"sessions_established,omitempty"`
+	HandshakeTimeouts               int               `json:"handshake_timeouts,omitempty"`
+	RelayFallbacks                  int               `json:"relay_fallbacks,omitempty"`
+	DirectRecoveries                int               `json:"direct_recoveries,omitempty"`
+	SentPackets                     int               `json:"sent_packets,omitempty"`
+	SentBytes                       int64             `json:"sent_bytes,omitempty"`
+	ReceivedPackets                 int               `json:"received_packets,omitempty"`
+	ReceivedBytes                   int64             `json:"received_bytes,omitempty"`
+	Candidates                      []CandidateStatus `json:"candidates"`
 }
 
 type CandidateStatus struct {
@@ -109,7 +115,7 @@ type WarmupResult struct {
 type DirectAttempt struct {
 	AttemptID     string
 	PeerNodeID    string
-	Candidates    []string
+	Candidates    []api.DirectAttemptCandidate
 	ExecuteAt     time.Time
 	Window        time.Duration
 	BurstInterval time.Duration
@@ -122,6 +128,8 @@ type DirectAttemptResult struct {
 	StartedAt      time.Time `json:"started_at"`
 	CompletedAt    time.Time `json:"completed_at"`
 	ReachedAddress string    `json:"reached_address,omitempty"`
+	ReachedSource  string    `json:"reached_source,omitempty"`
+	Phase          string    `json:"phase,omitempty"`
 	ActiveAddress  string    `json:"active_address,omitempty"`
 	Result         string    `json:"result"`
 	Error          string    `json:"error,omitempty"`
@@ -153,26 +161,29 @@ type Transport struct {
 }
 
 type peerMetrics struct {
-	ActiveSince               time.Time
-	LastPathChangeAt          time.Time
-	LastSendSuccessAt         time.Time
-	LastReceiveAt             time.Time
-	LastSendErrorAt           time.Time
-	LastSendError             string
-	LastDirectAttemptID       string
-	LastDirectAttemptReason   string
-	LastDirectAttemptAt       time.Time
-	LastDirectAttemptResult   string
-	LastDirectSuccessAt       time.Time
-	ConsecutiveDirectFailures int
-	SessionsEstablished       int
-	HandshakeTimeouts         int
-	RelayFallbacks            int
-	DirectRecoveries          int
-	SentPackets               int
-	SentBytes                 int64
-	ReceivedPackets           int
-	ReceivedBytes             int64
+	ActiveSince                     time.Time
+	LastPathChangeAt                time.Time
+	LastSendSuccessAt               time.Time
+	LastReceiveAt                   time.Time
+	LastSendErrorAt                 time.Time
+	LastSendError                   string
+	LastDirectAttemptID             string
+	LastDirectAttemptReason         string
+	LastDirectAttemptAt             time.Time
+	LastDirectAttemptResult         string
+	LastDirectAttemptReachedSource  string
+	LastDirectAttemptPhase          string
+	LastDirectAttemptCandidateCount int
+	LastDirectSuccessAt             time.Time
+	ConsecutiveDirectFailures       int
+	SessionsEstablished             int
+	HandshakeTimeouts               int
+	RelayFallbacks                  int
+	DirectRecoveries                int
+	SentPackets                     int
+	SentBytes                       int64
+	ReceivedPackets                 int
+	ReceivedBytes                   int64
 }
 
 type envelope struct {
@@ -377,31 +388,34 @@ func (t *Transport) Snapshot() Report {
 	for _, peerNodeID := range peerIDs {
 		stats := peerStats[peerNodeID]
 		peerStatus := PeerStatus{
-			NodeID:                    peerNodeID,
-			ActiveAddress:             strings.TrimSpace(activePeer[peerNodeID]),
-			ActiveKind:                t.candidateKindForPeer(peerNodeID, activePeer[peerNodeID]),
-			ActiveSince:               stats.ActiveSince,
-			LastPathChangeAt:          stats.LastPathChangeAt,
-			LastDirectTryAt:           lastDirectTry[peerNodeID],
-			LastSendSuccessAt:         stats.LastSendSuccessAt,
-			LastReceiveAt:             stats.LastReceiveAt,
-			LastSendErrorAt:           stats.LastSendErrorAt,
-			LastSendError:             stats.LastSendError,
-			LastDirectAttemptID:       stats.LastDirectAttemptID,
-			LastDirectAttemptReason:   stats.LastDirectAttemptReason,
-			LastDirectAttemptAt:       stats.LastDirectAttemptAt,
-			LastDirectAttemptResult:   stats.LastDirectAttemptResult,
-			LastDirectSuccessAt:       stats.LastDirectSuccessAt,
-			ConsecutiveDirectFailures: stats.ConsecutiveDirectFailures,
-			SessionsEstablished:       stats.SessionsEstablished,
-			HandshakeTimeouts:         stats.HandshakeTimeouts,
-			RelayFallbacks:            stats.RelayFallbacks,
-			DirectRecoveries:          stats.DirectRecoveries,
-			SentPackets:               stats.SentPackets,
-			SentBytes:                 stats.SentBytes,
-			ReceivedPackets:           stats.ReceivedPackets,
-			ReceivedBytes:             stats.ReceivedBytes,
-			Candidates:                []CandidateStatus{},
+			NodeID:                          peerNodeID,
+			ActiveAddress:                   strings.TrimSpace(activePeer[peerNodeID]),
+			ActiveKind:                      t.candidateKindForPeer(peerNodeID, activePeer[peerNodeID]),
+			ActiveSince:                     stats.ActiveSince,
+			LastPathChangeAt:                stats.LastPathChangeAt,
+			LastDirectTryAt:                 lastDirectTry[peerNodeID],
+			LastSendSuccessAt:               stats.LastSendSuccessAt,
+			LastReceiveAt:                   stats.LastReceiveAt,
+			LastSendErrorAt:                 stats.LastSendErrorAt,
+			LastSendError:                   stats.LastSendError,
+			LastDirectAttemptID:             stats.LastDirectAttemptID,
+			LastDirectAttemptReason:         stats.LastDirectAttemptReason,
+			LastDirectAttemptAt:             stats.LastDirectAttemptAt,
+			LastDirectAttemptResult:         stats.LastDirectAttemptResult,
+			LastDirectAttemptReachedSource:  stats.LastDirectAttemptReachedSource,
+			LastDirectAttemptPhase:          stats.LastDirectAttemptPhase,
+			LastDirectAttemptCandidateCount: stats.LastDirectAttemptCandidateCount,
+			LastDirectSuccessAt:             stats.LastDirectSuccessAt,
+			ConsecutiveDirectFailures:       stats.ConsecutiveDirectFailures,
+			SessionsEstablished:             stats.SessionsEstablished,
+			HandshakeTimeouts:               stats.HandshakeTimeouts,
+			RelayFallbacks:                  stats.RelayFallbacks,
+			DirectRecoveries:                stats.DirectRecoveries,
+			SentPackets:                     stats.SentPackets,
+			SentBytes:                       stats.SentBytes,
+			ReceivedPackets:                 stats.ReceivedPackets,
+			ReceivedBytes:                   stats.ReceivedBytes,
+			Candidates:                      []CandidateStatus{},
 		}
 		if peerStatus.ActiveAddress == "" {
 			peerStatus.ActiveKind = ""
@@ -702,18 +716,21 @@ func (t *Transport) ExecuteDirectAttempt(ctx context.Context, attempt DirectAtte
 		return result, err
 	}
 
-	candidates := make([]string, 0, len(attempt.Candidates))
-	for _, candidate := range dedupeAddresses(attempt.Candidates) {
-		if kind := t.candidateKindForPeer(result.PeerNodeID, candidate); kind == "relay" || t.isRelayAddress(candidate) {
+	candidates := api.NormalizeDirectAttemptCandidates(attempt.Candidates, attempt.ExecuteAt)
+	filtered := make([]api.DirectAttemptCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if kind := t.candidateKindForPeer(result.PeerNodeID, candidate.Address); kind == "relay" || t.isRelayAddress(candidate.Address) {
 			continue
 		}
-		candidates = append(candidates, candidate)
+		filtered = append(filtered, candidate)
 	}
-	if len(candidates) == 0 {
+	if len(filtered) == 0 {
 		err := errors.New("no direct candidate is available")
 		result.Error = err.Error()
 		return result, err
 	}
+	primaryCandidates, secondaryCandidates := splitDirectAttemptCandidates(filtered)
+	candidateCount := len(filtered)
 
 	if attempt.Window <= 0 {
 		attempt.Window = t.handshakeTimeout
@@ -722,18 +739,29 @@ func (t *Transport) ExecuteDirectAttempt(ctx context.Context, attempt DirectAtte
 		attempt.BurstInterval = t.handshakeRetryInterval
 	}
 
-	deadline := time.Now().UTC().Add(attempt.Window)
+	now := time.Now().UTC()
+	deadline := now.Add(attempt.Window)
 	if !attempt.ExecuteAt.IsZero() {
 		deadline = attempt.ExecuteAt.Add(attempt.Window)
 	}
-	if prewarmStart := directAttemptPrewarmStart(time.Now().UTC(), attempt.ExecuteAt, attempt.Window, attempt.BurstInterval); !prewarmStart.IsZero() && time.Now().UTC().Before(prewarmStart) {
-		timer := time.NewTimer(time.Until(prewarmStart))
+	startAt := now
+	switch {
+	case len(primaryCandidates) > 0:
+		startAt = directAttemptPrewarmStart(now, attempt.ExecuteAt, attempt.Window, attempt.BurstInterval)
+	case !attempt.ExecuteAt.IsZero():
+		startAt = attempt.ExecuteAt
+	}
+	if startAt.IsZero() || startAt.Before(now) {
+		startAt = now
+	}
+	if time.Now().UTC().Before(startAt) {
+		timer := time.NewTimer(time.Until(startAt))
 		defer timer.Stop()
 		select {
 		case <-ctx.Done():
 			result.Result = "cancelled"
 			result.Error = ctx.Err().Error()
-			t.recordDirectAttemptResult(result.PeerNodeID, result.AttemptID, attempt.Reason, time.Now().UTC(), result.Result)
+			t.recordDirectAttemptResult(result.PeerNodeID, result.AttemptID, attempt.Reason, time.Now().UTC(), result.Result, "", "", candidateCount)
 			return result, ctx.Err()
 		case <-timer.C:
 		}
@@ -746,7 +774,7 @@ func (t *Transport) ExecuteDirectAttempt(ctx context.Context, attempt DirectAtte
 		result.StartedAt = completedAt
 		result.CompletedAt = completedAt
 		result.ActiveAddress = t.activeAddress(result.PeerNodeID)
-		t.recordDirectAttemptResult(result.PeerNodeID, result.AttemptID, attempt.Reason, completedAt, result.Result)
+		t.recordDirectAttemptResult(result.PeerNodeID, result.AttemptID, attempt.Reason, completedAt, result.Result, "", "", candidateCount)
 		return result, nil
 	}
 
@@ -764,14 +792,49 @@ func (t *Transport) ExecuteDirectAttempt(ctx context.Context, attempt DirectAtte
 
 	previousActive := t.activeAddress(result.PeerNodeID)
 	t.recordDirectTry(result.PeerNodeID)
-	reachedAddress, err := t.ensureAnySessionUntil(ctx, result.PeerNodeID, candidates, deadline, attempt.BurstInterval)
+	var (
+		reachedCandidate api.DirectAttemptCandidate
+		err              error
+	)
+	if len(primaryCandidates) > 0 {
+		result.Phase = api.DirectAttemptPhasePrimary
+		primaryDeadline := deadline
+		if len(secondaryCandidates) > 0 && !attempt.ExecuteAt.IsZero() && time.Now().UTC().Before(attempt.ExecuteAt) {
+			primaryDeadline = attempt.ExecuteAt
+		}
+		if !primaryDeadline.Before(time.Now().UTC()) {
+			reachedCandidate, err = t.ensureAnySessionCandidatesUntil(ctx, result.PeerNodeID, primaryCandidates, primaryDeadline, attempt.BurstInterval, directAttemptCandidateSpacing)
+		} else if len(secondaryCandidates) == 0 {
+			err = fmt.Errorf("secure transport handshake timeout for peer %s", result.PeerNodeID)
+		}
+	}
+	runSecondary := len(secondaryCandidates) > 0 && (len(primaryCandidates) == 0 || err != nil)
+	if runSecondary && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		if !attempt.ExecuteAt.IsZero() && time.Now().UTC().Before(attempt.ExecuteAt) {
+			timer := time.NewTimer(time.Until(attempt.ExecuteAt))
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				err = ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if err == nil || (!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)) {
+			result.Phase = api.DirectAttemptPhaseSecondary
+			reachedCandidate, err = t.ensureAnySessionCandidatesUntil(ctx, result.PeerNodeID, secondaryCandidates, deadline, attempt.BurstInterval, directAttemptCandidateSpacing)
+		}
+	}
 	result.CompletedAt = time.Now().UTC()
 	result.ActiveAddress = t.activeAddress(result.PeerNodeID)
 
 	switch {
 	case err == nil:
 		result.Result = "success"
-		result.ReachedAddress = strings.TrimSpace(reachedAddress)
+		result.ReachedAddress = strings.TrimSpace(reachedCandidate.Address)
+		result.ReachedSource = strings.TrimSpace(reachedCandidate.Source)
+		if result.Phase == "" {
+			result.Phase = api.NormalizeDirectAttemptPhase(reachedCandidate.Phase, reachedCandidate.Source)
+		}
 		if result.ActiveAddress == "" {
 			result.ActiveAddress = result.ReachedAddress
 		}
@@ -786,7 +849,7 @@ func (t *Transport) ExecuteDirectAttempt(ctx context.Context, attempt DirectAtte
 			result.Result = "timeout"
 		}
 	}
-	t.recordDirectAttemptResult(result.PeerNodeID, result.AttemptID, attempt.Reason, result.CompletedAt, result.Result)
+	t.recordDirectAttemptResult(result.PeerNodeID, result.AttemptID, attempt.Reason, result.CompletedAt, result.Result, result.ReachedSource, result.Phase, candidateCount)
 	return result, err
 }
 
@@ -962,6 +1025,135 @@ func (t *Transport) ensureAnySessionUntil(ctx context.Context, peerNodeID string
 		case <-retryTicker.C:
 			if err := sendBurst(); err != nil {
 				return "", err
+			}
+		}
+	}
+}
+
+func splitDirectAttemptCandidates(candidates []api.DirectAttemptCandidate) ([]api.DirectAttemptCandidate, []api.DirectAttemptCandidate) {
+	primary := make([]api.DirectAttemptCandidate, 0, len(candidates))
+	secondary := make([]api.DirectAttemptCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		switch api.NormalizeDirectAttemptPhase(candidate.Phase, candidate.Source) {
+		case api.DirectAttemptPhasePrimary:
+			primary = append(primary, candidate)
+		default:
+			secondary = append(secondary, candidate)
+		}
+	}
+	return primary, secondary
+}
+
+func (t *Transport) ensureAnySessionCandidatesUntil(ctx context.Context, peerNodeID string, candidates []api.DirectAttemptCandidate, deadline time.Time, retryInterval, candidateSpacing time.Duration) (api.DirectAttemptCandidate, error) {
+	candidates = api.NormalizeDirectAttemptCandidates(candidates, deadline)
+	if len(candidates) == 0 {
+		return api.DirectAttemptCandidate{}, errors.New("no candidate address is available for secure transport")
+	}
+	addresses := api.DirectAttemptCandidateAddresses(candidates)
+	if len(addresses) == 0 {
+		return api.DirectAttemptCandidate{}, errors.New("no candidate address is available for secure transport")
+	}
+	if retryInterval <= 0 {
+		retryInterval = t.handshakeRetryInterval
+	}
+	if deadline.IsZero() {
+		deadline = time.Now().UTC().Add(t.handshakeTimeout)
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		t.recordHandshakeTimeout(peerNodeID, strings.Join(addresses, ","))
+		return api.DirectAttemptCandidate{}, fmt.Errorf("secure transport handshake timeout for peer %s", peerNodeID)
+	}
+	if retryInterval > remaining {
+		retryInterval = remaining
+	}
+
+	t.stateMu.Lock()
+	for _, candidate := range candidates {
+		if _, ok := t.established[t.establishedKey(peerNodeID, candidate.Address)]; ok {
+			t.stateMu.Unlock()
+			return candidate, nil
+		}
+	}
+
+	challenge, err := randomHex(8)
+	if err != nil {
+		t.stateMu.Unlock()
+		return api.DirectAttemptCandidate{}, err
+	}
+	waiterKey := peerNodeID + "|" + challenge
+	waiter := make(chan string, 1)
+	t.waiters[waiterKey] = waiter
+	t.stateMu.Unlock()
+
+	defer func() {
+		t.stateMu.Lock()
+		delete(t.waiters, waiterKey)
+		t.stateMu.Unlock()
+	}()
+
+	sendHello := func(address string) error {
+		env, err := t.encryptEnvelope(envelopeTypeHello, peerNodeID, helloPayload{Challenge: challenge})
+		if err != nil {
+			return err
+		}
+		return t.writeEnvelope(ctx, address, env)
+	}
+	sendBurst := func() error {
+		failures := make([]string, 0)
+		for idx, candidate := range candidates {
+			if err := sendHello(candidate.Address); err != nil {
+				failures = append(failures, fmt.Sprintf("%s: %v", candidate.Address, err))
+			}
+			if idx == len(candidates)-1 || candidateSpacing <= 0 {
+				continue
+			}
+			timer := time.NewTimer(candidateSpacing)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if len(failures) == len(candidates) {
+			return fmt.Errorf("send secure hello burst for peer %s failed: %s", peerNodeID, strings.Join(failures, "; "))
+		}
+		return nil
+	}
+	if err := sendBurst(); err != nil {
+		return api.DirectAttemptCandidate{}, err
+	}
+
+	timer := time.NewTimer(remaining)
+	defer timer.Stop()
+	retryTicker := time.NewTicker(retryInterval)
+	defer retryTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return api.DirectAttemptCandidate{}, ctx.Err()
+		case <-timer.C:
+			t.recordHandshakeTimeout(peerNodeID, strings.Join(addresses, ","))
+			return api.DirectAttemptCandidate{}, fmt.Errorf("secure transport handshake timeout for peer %s", peerNodeID)
+		case responderAddress := <-waiter:
+			responderAddress = strings.TrimSpace(responderAddress)
+			if responderAddress == "" {
+				responderAddress = t.currentEstablishedAddress(peerNodeID, addresses)
+			}
+			matched := directAttemptCandidateForAddress(candidates, responderAddress)
+			if strings.TrimSpace(matched.Address) == "" {
+				matched = candidates[0]
+			}
+			if responderAddress == "" {
+				responderAddress = matched.Address
+			}
+			t.markEstablished(peerNodeID, responderAddress)
+			return matched, nil
+		case <-retryTicker.C:
+			if err := sendBurst(); err != nil {
+				return api.DirectAttemptCandidate{}, err
 			}
 		}
 	}
@@ -1455,7 +1647,17 @@ func (t *Transport) recordDirectTryLocked(peerNodeID string, attemptedAt time.Ti
 	t.lastDirectTry[peerNodeID] = attemptedAt
 }
 
-func (t *Transport) recordDirectAttemptResult(peerNodeID, attemptID, reason string, attemptedAt time.Time, result string) {
+func directAttemptCandidateForAddress(candidates []api.DirectAttemptCandidate, address string) api.DirectAttemptCandidate {
+	address = strings.TrimSpace(address)
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate.Address) == address {
+			return candidate
+		}
+	}
+	return api.DirectAttemptCandidate{}
+}
+
+func (t *Transport) recordDirectAttemptResult(peerNodeID, attemptID, reason string, attemptedAt time.Time, result, reachedSource, phase string, candidateCount int) {
 	t.stateMu.Lock()
 	defer t.stateMu.Unlock()
 	if t.peerStats == nil {
@@ -1466,6 +1668,9 @@ func (t *Transport) recordDirectAttemptResult(peerNodeID, attemptID, reason stri
 	metrics.LastDirectAttemptReason = strings.TrimSpace(reason)
 	metrics.LastDirectAttemptAt = attemptedAt
 	metrics.LastDirectAttemptResult = strings.TrimSpace(result)
+	metrics.LastDirectAttemptReachedSource = strings.TrimSpace(reachedSource)
+	metrics.LastDirectAttemptPhase = strings.TrimSpace(phase)
+	metrics.LastDirectAttemptCandidateCount = candidateCount
 	switch strings.ToLower(strings.TrimSpace(result)) {
 	case "success":
 		metrics.LastDirectSuccessAt = attemptedAt

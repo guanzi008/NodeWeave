@@ -152,6 +152,7 @@ func (s *SQLiteStore) ensureDirectAttemptsTable() error {
 			node_b_id TEXT NOT NULL,
 			node_a_candidates_json TEXT NOT NULL DEFAULT '[]',
 			node_b_candidates_json TEXT NOT NULL DEFAULT '[]',
+			profile TEXT NOT NULL DEFAULT '',
 			issued_at TEXT NOT NULL DEFAULT '',
 			execute_at TEXT NOT NULL,
 			window_millis INTEGER NOT NULL,
@@ -170,7 +171,8 @@ func (s *SQLiteStore) ensureDirectAttemptsTable() error {
 		return fmt.Errorf("query direct_attempts table info: %w", err)
 	}
 	defer rows.Close()
-	hasColumn := false
+	hasIssuedAt := false
+	hasProfile := false
 	for rows.Next() {
 		var (
 			cid        int
@@ -183,19 +185,25 @@ func (s *SQLiteStore) ensureDirectAttemptsTable() error {
 		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultVal, &primaryKey); err != nil {
 			return fmt.Errorf("scan direct_attempts table info: %w", err)
 		}
-		if name == "issued_at" {
-			hasColumn = true
-			break
+		switch name {
+		case "issued_at":
+			hasIssuedAt = true
+		case "profile":
+			hasProfile = true
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate direct_attempts table info: %w", err)
 	}
-	if hasColumn {
-		return nil
+	if !hasProfile {
+		if _, err := s.db.Exec(`ALTER TABLE direct_attempts ADD COLUMN profile TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add profile column: %w", err)
+		}
 	}
-	if _, err := s.db.Exec(`ALTER TABLE direct_attempts ADD COLUMN issued_at TEXT NOT NULL DEFAULT ''`); err != nil {
-		return fmt.Errorf("add issued_at column: %w", err)
+	if !hasIssuedAt {
+		if _, err := s.db.Exec(`ALTER TABLE direct_attempts ADD COLUMN issued_at TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add issued_at column: %w", err)
+		}
 	}
 	return nil
 }
@@ -754,7 +762,7 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 	}
 	policy := directAttemptPolicyFromConfig(s.cfg)
 	now := time.Now().UTC()
-	selfCandidates := freshDirectCandidateAddressesWithPolicy(selfNode, now, policy)
+	selfDirectCandidates := freshDirectAttemptCandidatesWithPolicy(selfNode, now, policy)
 
 	peers := make([]api.Peer, 0)
 	for rows.Next() {
@@ -762,7 +770,7 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 		if err != nil {
 			return nil, err
 		}
-		peerCandidates := freshDirectCandidateAddressesWithPolicy(node, now, policy)
+		peerDirectCandidates := freshDirectAttemptCandidatesWithPolicy(node, now, policy)
 		peerTransportState := transportStates[node.ID]
 		latestAttempt, ok, err := s.directAttemptPairByKeyTx(tx, pairKey(selfNodeID, node.ID))
 		if err != nil {
@@ -772,7 +780,7 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 		if ok && !now.After(latestAttempt.ExpiresAt) {
 			latestAttemptPtr = &latestAttempt
 		}
-		recoveryState := recoveryStateForPeer(selfNode, node, selfCandidates, peerCandidates, selfTransportStates[node.ID], peerTransportState, now, policy, latestAttemptPtr)
+		recoveryState := recoveryStateForPeerCandidates(selfNode, node, selfDirectCandidates, peerDirectCandidates, selfTransportStates[node.ID], peerTransportState, now, policy, latestAttemptPtr)
 		peer := api.Peer{
 			NodeID:          node.ID,
 			OverlayIP:       node.OverlayIP,
@@ -793,6 +801,10 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 			peer.ObservedTransportReportedAt = peerTransportState.ReportedAt
 			peer.ObservedLastDirectAttemptAt = peerTransportState.LastDirectAttemptAt
 			peer.ObservedLastDirectAttemptResult = peerTransportState.LastDirectAttemptResult
+			peer.ObservedLastDirectAttemptProfile = peerTransportState.LastDirectAttemptProfile
+			peer.ObservedLastDirectAttemptReachedSource = peerTransportState.LastDirectAttemptReachedSource
+			peer.ObservedLastDirectAttemptPhase = peerTransportState.LastDirectAttemptPhase
+			peer.ObservedLastDirectAttemptCandidateCount = peerTransportState.LastDirectAttemptCandidateCount
 			peer.ObservedLastDirectSuccessAt = peerTransportState.LastDirectSuccessAt
 			peer.ObservedConsecutiveDirectFailures = peerTransportState.ConsecutiveDirectFailures
 		}
@@ -810,6 +822,7 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 		if recoveryState.LastIssuedAttemptID != "" {
 			peer.ObservedDirectRecoveryLastIssuedAttemptID = recoveryState.LastIssuedAttemptID
 			peer.ObservedDirectRecoveryLastIssuedAttemptReason = recoveryState.LastIssuedAttemptReason
+			peer.ObservedDirectRecoveryLastIssuedAttemptProfile = recoveryState.LastIssuedAttemptProfile
 			peer.ObservedDirectRecoveryLastIssuedAttemptAt = recoveryState.LastIssuedAttemptAt
 			peer.ObservedDirectRecoveryLastIssuedAttemptExecuteAt = recoveryState.LastIssuedAttemptExecuteAt
 		}
@@ -849,7 +862,7 @@ func (s *SQLiteStore) directAttemptRecoveryStatesForNodeTx(tx *sql.Tx, nodeID st
 	defer rows.Close()
 
 	policy := directAttemptPolicyFromConfig(s.cfg)
-	selfCandidates := freshDirectCandidateAddressesWithPolicy(selfNode, now, policy)
+	selfDirectCandidates := freshDirectAttemptCandidatesWithPolicy(selfNode, now, policy)
 	states := make([]api.PeerRecoveryState, 0)
 	for rows.Next() {
 		var peerID string
@@ -860,7 +873,7 @@ func (s *SQLiteStore) directAttemptRecoveryStatesForNodeTx(tx *sql.Tx, nodeID st
 		if err != nil {
 			return nil, err
 		}
-		peerCandidates := freshDirectCandidateAddressesWithPolicy(peerNode, now, policy)
+		peerDirectCandidates := freshDirectAttemptCandidatesWithPolicy(peerNode, now, policy)
 		latestAttempt, ok, err := s.directAttemptPairByKeyTx(tx, pairKey(nodeID, peerID))
 		if err != nil {
 			return nil, err
@@ -869,7 +882,7 @@ func (s *SQLiteStore) directAttemptRecoveryStatesForNodeTx(tx *sql.Tx, nodeID st
 		if ok && !now.After(latestAttempt.ExpiresAt) {
 			latestAttemptPtr = &latestAttempt
 		}
-		recoveryState := recoveryStateForPeer(selfNode, peerNode, selfCandidates, peerCandidates, selfStates[peerID], peerStatesForSelf[peerID], now, policy, latestAttemptPtr)
+		recoveryState := recoveryStateForPeerCandidates(selfNode, peerNode, selfDirectCandidates, peerDirectCandidates, selfStates[peerID], peerStatesForSelf[peerID], now, policy, latestAttemptPtr)
 		states = append(states, recoveryState)
 	}
 	return states, rows.Err()
@@ -1064,7 +1077,7 @@ func (s *SQLiteStore) deleteExpiredDirectAttemptsTx(tx *sql.Tx, now time.Time) e
 
 func (s *SQLiteStore) directAttemptPairByKeyTx(tx *sql.Tx, key string) (directAttemptPair, bool, error) {
 	row := tx.QueryRow(`
-		SELECT attempt_id, node_a_id, node_b_id, node_a_candidates_json, node_b_candidates_json, issued_at, execute_at, window_millis, burst_interval_millis, reason, expires_at
+		SELECT attempt_id, node_a_id, node_b_id, node_a_candidates_json, node_b_candidates_json, profile, issued_at, execute_at, window_millis, burst_interval_millis, reason, expires_at
 		FROM direct_attempts
 		WHERE pair_key = ?
 	`, key)
@@ -1090,10 +1103,10 @@ func (s *SQLiteStore) insertDirectAttemptTx(tx *sql.Tx, pair directAttemptPair) 
 	if _, err := tx.Exec(`
 		INSERT INTO direct_attempts (
 			attempt_id, pair_key, node_a_id, node_b_id, node_a_candidates_json, node_b_candidates_json,
-			issued_at, execute_at, window_millis, burst_interval_millis, reason, expires_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			profile, issued_at, execute_at, window_millis, burst_interval_millis, reason, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, pair.AttemptID, pairKey(pair.NodeAID, pair.NodeBID), pair.NodeAID, pair.NodeBID, string(leftJSON), string(rightJSON),
-		pair.IssuedAt.Format(time.RFC3339Nano), pair.ExecuteAt.Format(time.RFC3339Nano), pair.Window.Milliseconds(), pair.BurstInterval.Milliseconds(), pair.Reason, pair.ExpiresAt.Format(time.RFC3339Nano)); err != nil {
+		strings.TrimSpace(pair.Profile), pair.IssuedAt.Format(time.RFC3339Nano), pair.ExecuteAt.Format(time.RFC3339Nano), pair.Window.Milliseconds(), pair.BurstInterval.Milliseconds(), pair.Reason, pair.ExpiresAt.Format(time.RFC3339Nano)); err != nil {
 		return fmt.Errorf("insert direct attempt: %w", err)
 	}
 	return nil
@@ -1101,7 +1114,7 @@ func (s *SQLiteStore) insertDirectAttemptTx(tx *sql.Tx, pair directAttemptPair) 
 
 func (s *SQLiteStore) directAttemptsForNodeTx(tx *sql.Tx, nodeID string, now time.Time) ([]api.DirectAttemptInstruction, error) {
 	rows, err := tx.Query(`
-		SELECT attempt_id, node_a_id, node_b_id, node_a_candidates_json, node_b_candidates_json, issued_at, execute_at, window_millis, burst_interval_millis, reason, expires_at
+		SELECT attempt_id, node_a_id, node_b_id, node_a_candidates_json, node_b_candidates_json, profile, issued_at, execute_at, window_millis, burst_interval_millis, reason, expires_at
 		FROM direct_attempts
 		WHERE node_a_id = ? OR node_b_id = ?
 	`, nodeID, nodeID)
@@ -1142,8 +1155,8 @@ func (s *SQLiteStore) scheduleDirectAttemptsTx(tx *sql.Tx, now time.Time, nodeID
 		return nil
 	}
 
-	nodeCandidates := freshDirectCandidateAddressesWithPolicy(node, now, policy)
-	if len(nodeCandidates) == 0 {
+	nodeDirectCandidates := freshDirectAttemptCandidatesWithPolicy(node, now, policy)
+	if len(nodeDirectCandidates) == 0 {
 		return nil
 	}
 	nodeTransportStates, err := s.loadPeerTransportStatesByNodeTx(tx, nodeID)
@@ -1169,8 +1182,8 @@ func (s *SQLiteStore) scheduleDirectAttemptsTx(tx *sql.Tx, now time.Time, nodeID
 		if !isNodeOnlineWithPolicy(peer, now, policy) {
 			continue
 		}
-		peerCandidates := freshDirectCandidateAddressesWithPolicy(peer, now, policy)
-		if len(peerCandidates) == 0 {
+		peerDirectCandidates := freshDirectAttemptCandidatesWithPolicy(peer, now, policy)
+		if len(peerDirectCandidates) == 0 {
 			continue
 		}
 		key := pairKey(node.ID, peer.ID)
@@ -1185,17 +1198,22 @@ func (s *SQLiteStore) scheduleDirectAttemptsTx(tx *sql.Tx, now time.Time, nodeID
 		if err != nil {
 			return err
 		}
-		reason, schedule := directAttemptReasonWithPolicy(nodeTransportStates[peer.ID], peerTransportStates[node.ID], now, policy)
+		reason, schedule := directAttemptReasonWithPolicyCandidates(nodeDirectCandidates, peerDirectCandidates, nodeTransportStates[peer.ID], peerTransportStates[node.ID], now, policy)
 		if !schedule {
 			continue
 		}
 		left, right := node, peer
-		leftCandidates, rightCandidates := nodeCandidates, peerCandidates
+		leftCandidates, rightCandidates := nodeDirectCandidates, peerDirectCandidates
 		if key != node.ID+"|"+peer.ID {
 			left, right = peer, node
-			leftCandidates, rightCandidates = peerCandidates, nodeCandidates
+			leftCandidates, rightCandidates = peerDirectCandidates, nodeDirectCandidates
 		}
-		if err := s.insertDirectAttemptTx(tx, newDirectAttemptPair(now, left, right, leftCandidates, rightCandidates, reason, policy)); err != nil {
+		leftState := nodeTransportStates[peer.ID]
+		rightState := peerTransportStates[node.ID]
+		if key != node.ID+"|"+peer.ID {
+			leftState, rightState = rightState, leftState
+		}
+		if err := s.insertDirectAttemptTx(tx, newDirectAttemptPair(now, left, right, leftCandidates, rightCandidates, reason, policy, leftState, rightState)); err != nil {
 			return err
 		}
 	}
@@ -1226,6 +1244,7 @@ func scanDirectAttemptPair(row interface{ Scan(dest ...any) error }) (directAtte
 		pair                directAttemptPair
 		nodeACandidatesJSON string
 		nodeBCandidatesJSON string
+		profile             string
 		issuedAt            string
 		executeAt           string
 		windowMillis        int64
@@ -1238,6 +1257,7 @@ func scanDirectAttemptPair(row interface{ Scan(dest ...any) error }) (directAtte
 		&pair.NodeBID,
 		&nodeACandidatesJSON,
 		&nodeBCandidatesJSON,
+		&profile,
 		&issuedAt,
 		&executeAt,
 		&windowMillis,
@@ -1246,12 +1266,6 @@ func scanDirectAttemptPair(row interface{ Scan(dest ...any) error }) (directAtte
 		&expiresAt,
 	); err != nil {
 		return directAttemptPair{}, err
-	}
-	if err := json.Unmarshal([]byte(nodeACandidatesJSON), &pair.NodeACandidates); err != nil {
-		return directAttemptPair{}, fmt.Errorf("parse node_a direct candidates: %w", err)
-	}
-	if err := json.Unmarshal([]byte(nodeBCandidatesJSON), &pair.NodeBCandidates); err != nil {
-		return directAttemptPair{}, fmt.Errorf("parse node_b direct candidates: %w", err)
 	}
 	if strings.TrimSpace(issuedAt) != "" {
 		parsedIssuedAt, err := time.Parse(time.RFC3339Nano, issuedAt)
@@ -1272,9 +1286,20 @@ func scanDirectAttemptPair(row interface{ Scan(dest ...any) error }) (directAtte
 	if pair.IssuedAt.IsZero() {
 		pair.IssuedAt = parsedExecuteAt
 	}
+	pair.Profile = strings.TrimSpace(profile)
 	pair.Window = time.Duration(windowMillis) * time.Millisecond
 	pair.BurstInterval = time.Duration(burstIntervalMillis) * time.Millisecond
 	pair.ExpiresAt = parsedExpiresAt
+	leftCandidates, err := api.UnmarshalDirectAttemptCandidatesJSON([]byte(nodeACandidatesJSON), pair.IssuedAt, pair.ExecuteAt)
+	if err != nil {
+		return directAttemptPair{}, fmt.Errorf("parse node_a direct candidates: %w", err)
+	}
+	rightCandidates, err := api.UnmarshalDirectAttemptCandidatesJSON([]byte(nodeBCandidatesJSON), pair.IssuedAt, pair.ExecuteAt)
+	if err != nil {
+		return directAttemptPair{}, fmt.Errorf("parse node_b direct candidates: %w", err)
+	}
+	pair.NodeACandidates = leftCandidates
+	pair.NodeBCandidates = rightCandidates
 	return pair, nil
 }
 

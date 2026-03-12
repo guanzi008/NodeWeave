@@ -104,7 +104,15 @@ func New(cfg config.Config) (*Service, error) {
 			}
 			entry.AttemptID = attemptID
 			entry.PeerNodeID = strings.TrimSpace(entry.PeerNodeID)
-			entry.Candidates = normalizedStrings(entry.Candidates)
+			entry.Profile = strings.TrimSpace(entry.Profile)
+			fallback := entry.IssuedAt
+			if fallback.IsZero() {
+				fallback = entry.ExecuteAt
+			}
+			entry.Candidates = api.NormalizeDirectAttemptCandidates(entry.Candidates, fallback)
+			if strings.TrimSpace(entry.Phase) == "" && len(entry.Candidates) > 0 {
+				entry.Phase = api.NormalizeDirectAttemptPhase(entry.Candidates[0].Phase, entry.Candidates[0].Source)
+			}
 			svc.attemptReports[attemptID] = entry
 		}
 	}
@@ -285,7 +293,9 @@ func (s *Service) sendHeartbeat(ctx context.Context) (api.HeartbeatResponse, err
 	natReport := natReportFromSTUN(stunReport)
 	peerTransportStates := []api.PeerTransportState{}
 	if transport := s.sharedSTUNTransport(); transport != nil {
-		peerTransportStates = peerTransportStatesFromReport(transport.Snapshot())
+		s.attemptMu.Lock()
+		peerTransportStates = peerTransportStatesFromReport(transport.Snapshot(), s.attemptReports)
+		s.attemptMu.Unlock()
 	}
 	resp, err := s.client.Heartbeat(ctx, s.state.Node.ID, s.state.NodeToken, api.HeartbeatRequest{
 		Endpoints:           endpoints,
@@ -851,25 +861,101 @@ func natReportFromSTUN(report stun.Report) api.NATReport {
 	return natReport
 }
 
-func peerTransportStatesFromReport(report secureudp.Report) []api.PeerTransportState {
+func peerTransportStatesFromReport(report secureudp.Report, attemptReports map[string]state.DirectAttemptReportEntry) []api.PeerTransportState {
+	reportProfiles := latestDirectAttemptReportsByPeer(attemptReports)
 	states := make([]api.PeerTransportState, 0, len(report.Peers))
 	for _, peer := range report.Peers {
 		state := api.PeerTransportState{
-			PeerNodeID:                peer.NodeID,
-			ActiveKind:                peer.ActiveKind,
-			ActiveAddress:             peer.ActiveAddress,
-			ReportedAt:                report.GeneratedAt,
-			LastDirectAttemptAt:       peer.LastDirectAttemptAt,
-			LastDirectAttemptResult:   peer.LastDirectAttemptResult,
-			LastDirectSuccessAt:       peer.LastDirectSuccessAt,
-			ConsecutiveDirectFailures: peer.ConsecutiveDirectFailures,
+			PeerNodeID:                      peer.NodeID,
+			ActiveKind:                      peer.ActiveKind,
+			ActiveAddress:                   peer.ActiveAddress,
+			ReportedAt:                      report.GeneratedAt,
+			LastDirectAttemptAt:             peer.LastDirectAttemptAt,
+			LastDirectAttemptResult:         peer.LastDirectAttemptResult,
+			LastDirectAttemptProfile:        "",
+			LastDirectAttemptReachedSource:  peer.LastDirectAttemptReachedSource,
+			LastDirectAttemptPhase:          peer.LastDirectAttemptPhase,
+			LastDirectAttemptCandidateCount: peer.LastDirectAttemptCandidateCount,
+			LastDirectSuccessAt:             peer.LastDirectSuccessAt,
+			ConsecutiveDirectFailures:       peer.ConsecutiveDirectFailures,
 		}
 		if state.PeerNodeID == "" {
 			continue
 		}
+		if reportEntry, ok := reportProfiles[state.PeerNodeID]; ok {
+			applyDirectAttemptReportToTransportState(&state, reportEntry)
+		}
 		states = append(states, state)
 	}
 	return states
+}
+
+func latestDirectAttemptReportsByPeer(attemptReports map[string]state.DirectAttemptReportEntry) map[string]state.DirectAttemptReportEntry {
+	byPeer := make(map[string]state.DirectAttemptReportEntry, len(attemptReports))
+	for _, entry := range attemptReports {
+		peerNodeID := strings.TrimSpace(entry.PeerNodeID)
+		if peerNodeID == "" {
+			continue
+		}
+		current, ok := byPeer[peerNodeID]
+		if !ok || directAttemptReportSortTime(entry).After(directAttemptReportSortTime(current)) {
+			byPeer[peerNodeID] = entry
+		}
+	}
+	return byPeer
+}
+
+func directAttemptReportSortTime(entry state.DirectAttemptReportEntry) time.Time {
+	switch {
+	case !entry.CompletedAt.IsZero():
+		return entry.CompletedAt.UTC()
+	case !entry.StartedAt.IsZero():
+		return entry.StartedAt.UTC()
+	case !entry.ScheduledAt.IsZero():
+		return entry.ScheduledAt.UTC()
+	case !entry.LastUpdatedAt.IsZero():
+		return entry.LastUpdatedAt.UTC()
+	case !entry.ExecuteAt.IsZero():
+		return entry.ExecuteAt.UTC()
+	default:
+		return entry.IssuedAt.UTC()
+	}
+}
+
+func applyDirectAttemptReportToTransportState(transportState *api.PeerTransportState, entry state.DirectAttemptReportEntry) {
+	if transportState == nil {
+		return
+	}
+	profile := strings.TrimSpace(entry.Profile)
+	if profile == "" {
+		return
+	}
+	reportAt := directAttemptReportSortTime(entry)
+	if !transportState.LastDirectAttemptAt.IsZero() && !reportAt.IsZero() {
+		delta := transportState.LastDirectAttemptAt.Sub(reportAt)
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > 15*time.Second {
+			return
+		}
+	}
+	transportState.LastDirectAttemptProfile = profile
+	if transportState.LastDirectAttemptAt.IsZero() && !reportAt.IsZero() {
+		transportState.LastDirectAttemptAt = reportAt
+	}
+	if strings.TrimSpace(transportState.LastDirectAttemptResult) == "" {
+		transportState.LastDirectAttemptResult = strings.TrimSpace(entry.Result)
+	}
+	if strings.TrimSpace(transportState.LastDirectAttemptReachedSource) == "" {
+		transportState.LastDirectAttemptReachedSource = strings.TrimSpace(entry.ReachedSource)
+	}
+	if strings.TrimSpace(transportState.LastDirectAttemptPhase) == "" {
+		transportState.LastDirectAttemptPhase = strings.TrimSpace(entry.Phase)
+	}
+	if transportState.LastDirectAttemptCandidateCount == 0 && len(entry.Candidates) > 0 {
+		transportState.LastDirectAttemptCandidateCount = len(entry.Candidates)
+	}
 }
 
 func (s *Service) discoverSTUN(ctx context.Context) (stun.Report, error) {
@@ -917,8 +1003,8 @@ func directAttemptWindow(instruction api.DirectAttemptInstruction) time.Duration
 func normalizeDirectAttempt(instruction api.DirectAttemptInstruction) (api.DirectAttemptInstruction, bool) {
 	instruction.AttemptID = strings.TrimSpace(instruction.AttemptID)
 	instruction.PeerNodeID = strings.TrimSpace(instruction.PeerNodeID)
+	instruction.Profile = strings.TrimSpace(instruction.Profile)
 	instruction.Reason = strings.TrimSpace(instruction.Reason)
-	instruction.Candidates = normalizedStrings(instruction.Candidates)
 	if !instruction.IssuedAt.IsZero() {
 		instruction.IssuedAt = instruction.IssuedAt.UTC()
 	}
@@ -928,6 +1014,11 @@ func normalizeDirectAttempt(instruction api.DirectAttemptInstruction) (api.Direc
 	if !instruction.ExecuteAt.IsZero() {
 		instruction.ExecuteAt = instruction.ExecuteAt.UTC()
 	}
+	fallback := instruction.IssuedAt
+	if fallback.IsZero() {
+		fallback = instruction.ExecuteAt
+	}
+	instruction.Candidates = api.NormalizeDirectAttemptCandidates(instruction.Candidates, fallback)
 	return instruction, true
 }
 
@@ -963,7 +1054,11 @@ func (s *Service) touchDirectAttemptReportLocked(instruction api.DirectAttemptIn
 	entry.Window = instruction.Window
 	entry.BurstInterval = instruction.BurstInterval
 	entry.Reason = strings.TrimSpace(instruction.Reason)
-	entry.Candidates = append([]string(nil), instruction.Candidates...)
+	entry.Profile = strings.TrimSpace(instruction.Profile)
+	entry.Candidates = append([]api.DirectAttemptCandidate(nil), instruction.Candidates...)
+	if len(entry.Candidates) > 0 {
+		entry.Phase = api.NormalizeDirectAttemptPhase(entry.Candidates[0].Phase, entry.Candidates[0].Source)
+	}
 	if entry.QueuedAt.IsZero() {
 		entry.QueuedAt = now
 	}
@@ -976,6 +1071,7 @@ func (s *Service) touchDirectAttemptReportLocked(instruction api.DirectAttemptIn
 		entry.StartedAt = time.Time{}
 		entry.CompletedAt = time.Time{}
 		entry.ReachedAddress = ""
+		entry.ReachedSource = ""
 		entry.ActiveAddress = ""
 	}
 	entry.LastUpdatedAt = now
@@ -1048,6 +1144,10 @@ func (s *Service) markCompletedDirectAttemptReportLocked(instruction api.DirectA
 		entry.CompletedAt = result.CompletedAt
 	}
 	entry.ReachedAddress = strings.TrimSpace(result.ReachedAddress)
+	entry.ReachedSource = strings.TrimSpace(result.ReachedSource)
+	if strings.TrimSpace(result.Phase) != "" {
+		entry.Phase = strings.TrimSpace(result.Phase)
+	}
 	entry.ActiveAddress = strings.TrimSpace(result.ActiveAddress)
 	entry.LastUpdatedAt = now
 	s.attemptReports[entry.AttemptID] = entry

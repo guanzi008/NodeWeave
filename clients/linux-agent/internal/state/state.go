@@ -128,9 +128,37 @@ func LoadDirectAttempts(path string) ([]api.DirectAttemptInstruction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read direct attempt file: %w", err)
 	}
-	var attempts []api.DirectAttemptInstruction
-	if err := json.Unmarshal(raw, &attempts); err != nil {
+	var compat []struct {
+		AttemptID     string          `json:"attempt_id"`
+		PeerNodeID    string          `json:"peer_node_id"`
+		IssuedAt      time.Time       `json:"issued_at,omitempty"`
+		ExecuteAt     time.Time       `json:"execute_at"`
+		Window        int64           `json:"window,omitempty"`
+		BurstInterval int64           `json:"burst_interval,omitempty"`
+		Candidates    json.RawMessage `json:"candidates,omitempty"`
+		Profile       string          `json:"profile,omitempty"`
+		Reason        string          `json:"reason,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &compat); err != nil {
 		return nil, fmt.Errorf("parse direct attempt file: %w", err)
+	}
+	attempts := make([]api.DirectAttemptInstruction, 0, len(compat))
+	for _, instruction := range compat {
+		candidates, err := api.UnmarshalDirectAttemptCandidatesJSON(instruction.Candidates, instruction.IssuedAt, instruction.ExecuteAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse direct attempt candidates: %w", err)
+		}
+		attempts = append(attempts, api.DirectAttemptInstruction{
+			AttemptID:     instruction.AttemptID,
+			PeerNodeID:    instruction.PeerNodeID,
+			IssuedAt:      instruction.IssuedAt,
+			ExecuteAt:     instruction.ExecuteAt,
+			Window:        instruction.Window,
+			BurstInterval: instruction.BurstInterval,
+			Candidates:    candidates,
+			Profile:       instruction.Profile,
+			Reason:        instruction.Reason,
+		})
 	}
 	return attempts, nil
 }

@@ -64,6 +64,16 @@ go run ./cmd/controlplane
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD=200ms`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW=900ms`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL=60ms`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_LEAD=200ms`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_WINDOW=900ms`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_BURST_INTERVAL=60ms`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_COOLDOWN=20s`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_MANUAL_RECOVER_AFTER=45s`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESS_AFTER=3`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESS_WINDOW=3m`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESSED_PROBE_INTERVAL=45s`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESSED_PROBE_LIMIT=1`
+- `CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESSED_PROBE_REFILL_INTERVAL=90s`
 - `CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_LEAD=250ms`
 - `CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_WINDOW=1500ms`
 - `CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_BURST_INTERVAL=50ms`
@@ -80,7 +90,13 @@ go run ./cmd/controlplane
 - 稀疏恢复探测还可以再加一层 probe limit；达到 `*_SUPPRESSED_PROBE_LIMIT` 后，即使 suppression window 还没结束，也不会再继续放行 probe
 - probe limit 现在还支持 quiet-period 自动回补；达到 `*_SUPPRESSED_PROBE_REFILL_INTERVAL` 后，已消耗的 probe 配额会逐步恢复
 - `relay_active` 和 `manual_recover` 可以使用独立的 lead/window/burst profile，不必和 `fresh_endpoints` 共用一套时间窗
+- 如果 controlplane 观察到上一轮 direct attempt 只打到了 `secondary` phase，而且当前出现了比上次失败更晚的 fresh `primary` candidate，则会自动切到 `primary_upgrade` profile；未单独配置时，这套 profile 默认回退到 `relay_active`
+- `primary_upgrade` 失败后的 cooldown、manual_recover 阈值和 suppression/probe 策略现在也可以独立配置；未单独设置时，仍会回退到当前 `timeout` / `relay_kept` 的治理参数
+- `direct_attempts[*].candidates` 现在按结构化对象下发，包含 `address/source/observed_at/priority/phase`；controlplane 会把 fresh `listener/stun` 划成 `primary`，把 `static/heartbeat` 划成 `secondary`
+- `direct_attempts[*]` 现在还会带 `profile`，用来说明这次下发到底走的是 `fresh_endpoints`、`relay_active`、`manual_recover` 还是 `primary_upgrade` 时间窗
+- heartbeat 里的 `peer_transport_states` 现在也会带最近一次 direct attempt 命中的 `profile`、`source`、执行到的 `phase` 和 candidate 数量；这些字段会透传到 bootstrap peer 摘要，便于诊断当前恢复策略究竟命中了哪一类 direct candidate
 - 当前 block 状态会同时反映到 `HeartbeatResponse.peer_recovery_states` 和 bootstrap peer 摘要里，包含 `next_probe_at`、`probe_budget`、`probe_failures`、`probe_remaining` 和 `probe_refill_at`
+- 最近一次 controlplane 放行的 direct attempt trace 现在也会保留 `profile`，并通过 `peer_recovery_states` 和 bootstrap peer 摘要暴露
 - 即使 controlplane 没有下发新的 `direct_attempts`，`peer_recovery_states` 和 bootstrap peer 摘要也会给出 `decision_status / decision_reason / decision_at / decision_next_at`，用于解释为什么这轮没有恢复直连，以及最早何时会重新评估
 
 ## 测试

@@ -53,6 +53,16 @@ type Config struct {
 	RelayActiveAttemptLead                              time.Duration
 	RelayActiveAttemptWindow                            time.Duration
 	RelayActiveAttemptBurstInterval                     time.Duration
+	PrimaryUpgradeAttemptLead                           time.Duration
+	PrimaryUpgradeAttemptWindow                         time.Duration
+	PrimaryUpgradeAttemptBurstInterval                  time.Duration
+	PrimaryUpgradeAttemptCooldown                       time.Duration
+	PrimaryUpgradeAttemptManualRecoverAfter             time.Duration
+	PrimaryUpgradeAttemptSuppressAfter                  int
+	PrimaryUpgradeAttemptSuppressWindow                 time.Duration
+	PrimaryUpgradeAttemptSuppressedProbeInterval        time.Duration
+	PrimaryUpgradeAttemptSuppressedProbeLimit           int
+	PrimaryUpgradeAttemptSuppressedProbeRefillInterval  time.Duration
 	ManualRecoverAttemptLead                            time.Duration
 	ManualRecoverAttemptWindow                          time.Duration
 	ManualRecoverAttemptBurstInterval                   time.Duration
@@ -113,6 +123,16 @@ func Load() Config {
 		RelayActiveAttemptLead:                              getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD", 200*time.Millisecond),
 		RelayActiveAttemptWindow:                            getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW", 900*time.Millisecond),
 		RelayActiveAttemptBurstInterval:                     getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL", 60*time.Millisecond),
+		PrimaryUpgradeAttemptLead:                           getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_LEAD", 0),
+		PrimaryUpgradeAttemptWindow:                         getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_WINDOW", 0),
+		PrimaryUpgradeAttemptBurstInterval:                  getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_BURST_INTERVAL", 0),
+		PrimaryUpgradeAttemptCooldown:                       getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_COOLDOWN", 0),
+		PrimaryUpgradeAttemptManualRecoverAfter:             getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_MANUAL_RECOVER_AFTER", 0),
+		PrimaryUpgradeAttemptSuppressAfter:                  getEnvInt("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESS_AFTER", 0),
+		PrimaryUpgradeAttemptSuppressWindow:                 getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESS_WINDOW", 0),
+		PrimaryUpgradeAttemptSuppressedProbeInterval:        getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESSED_PROBE_INTERVAL", 0),
+		PrimaryUpgradeAttemptSuppressedProbeLimit:           getEnvInt("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESSED_PROBE_LIMIT", 0),
+		PrimaryUpgradeAttemptSuppressedProbeRefillInterval:  getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_SUPPRESSED_PROBE_REFILL_INTERVAL", 0),
 		ManualRecoverAttemptLead:                            getEnvDuration("CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_LEAD", 250*time.Millisecond),
 		ManualRecoverAttemptWindow:                          getEnvDuration("CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_WINDOW", 1500*time.Millisecond),
 		ManualRecoverAttemptBurstInterval:                   getEnvDuration("CONTROLPLANE_MANUAL_RECOVER_ATTEMPT_BURST_INTERVAL", 50*time.Millisecond),

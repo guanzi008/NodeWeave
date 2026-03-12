@@ -67,14 +67,18 @@ type NATReport struct {
 }
 
 type PeerTransportState struct {
-	PeerNodeID                string    `json:"peer_node_id"`
-	ActiveKind                string    `json:"active_kind,omitempty"`
-	ActiveAddress             string    `json:"active_address,omitempty"`
-	ReportedAt                time.Time `json:"reported_at,omitempty"`
-	LastDirectAttemptAt       time.Time `json:"last_direct_attempt_at,omitempty"`
-	LastDirectAttemptResult   string    `json:"last_direct_attempt_result,omitempty"`
-	LastDirectSuccessAt       time.Time `json:"last_direct_success_at,omitempty"`
-	ConsecutiveDirectFailures int       `json:"consecutive_direct_failures,omitempty"`
+	PeerNodeID                      string    `json:"peer_node_id"`
+	ActiveKind                      string    `json:"active_kind,omitempty"`
+	ActiveAddress                   string    `json:"active_address,omitempty"`
+	ReportedAt                      time.Time `json:"reported_at,omitempty"`
+	LastDirectAttemptAt             time.Time `json:"last_direct_attempt_at,omitempty"`
+	LastDirectAttemptResult         string    `json:"last_direct_attempt_result,omitempty"`
+	LastDirectAttemptProfile        string    `json:"last_direct_attempt_profile,omitempty"`
+	LastDirectAttemptReachedSource  string    `json:"last_direct_attempt_reached_source,omitempty"`
+	LastDirectAttemptPhase          string    `json:"last_direct_attempt_phase,omitempty"`
+	LastDirectAttemptCandidateCount int       `json:"last_direct_attempt_candidate_count,omitempty"`
+	LastDirectSuccessAt             time.Time `json:"last_direct_success_at,omitempty"`
+	ConsecutiveDirectFailures       int       `json:"consecutive_direct_failures,omitempty"`
 }
 
 type PeerRecoveryState struct {
@@ -90,6 +94,7 @@ type PeerRecoveryState struct {
 	ProbeRefillAt              time.Time `json:"probe_refill_at,omitempty"`
 	LastIssuedAttemptID        string    `json:"last_issued_attempt_id,omitempty"`
 	LastIssuedAttemptReason    string    `json:"last_issued_attempt_reason,omitempty"`
+	LastIssuedAttemptProfile   string    `json:"last_issued_attempt_profile,omitempty"`
 	LastIssuedAttemptAt        time.Time `json:"last_issued_attempt_at,omitempty"`
 	LastIssuedAttemptExecuteAt time.Time `json:"last_issued_attempt_execute_at,omitempty"`
 	DecisionStatus             string    `json:"decision_status,omitempty"`
@@ -134,6 +139,10 @@ type Peer struct {
 	ObservedTransportReportedAt                      time.Time             `json:"observed_transport_reported_at,omitempty"`
 	ObservedLastDirectAttemptAt                      time.Time             `json:"observed_last_direct_attempt_at,omitempty"`
 	ObservedLastDirectAttemptResult                  string                `json:"observed_last_direct_attempt_result,omitempty"`
+	ObservedLastDirectAttemptProfile                 string                `json:"observed_last_direct_attempt_profile,omitempty"`
+	ObservedLastDirectAttemptReachedSource           string                `json:"observed_last_direct_attempt_reached_source,omitempty"`
+	ObservedLastDirectAttemptPhase                   string                `json:"observed_last_direct_attempt_phase,omitempty"`
+	ObservedLastDirectAttemptCandidateCount          int                   `json:"observed_last_direct_attempt_candidate_count,omitempty"`
 	ObservedLastDirectSuccessAt                      time.Time             `json:"observed_last_direct_success_at,omitempty"`
 	ObservedConsecutiveDirectFailures                int                   `json:"observed_consecutive_direct_failures,omitempty"`
 	ObservedDirectRecoveryBlocked                    bool                  `json:"observed_direct_recovery_blocked,omitempty"`
@@ -147,6 +156,7 @@ type Peer struct {
 	ObservedDirectRecoveryProbeRefillAt              time.Time             `json:"observed_direct_recovery_probe_refill_at,omitempty"`
 	ObservedDirectRecoveryLastIssuedAttemptID        string                `json:"observed_direct_recovery_last_issued_attempt_id,omitempty"`
 	ObservedDirectRecoveryLastIssuedAttemptReason    string                `json:"observed_direct_recovery_last_issued_attempt_reason,omitempty"`
+	ObservedDirectRecoveryLastIssuedAttemptProfile   string                `json:"observed_direct_recovery_last_issued_attempt_profile,omitempty"`
 	ObservedDirectRecoveryLastIssuedAttemptAt        time.Time             `json:"observed_direct_recovery_last_issued_attempt_at,omitempty"`
 	ObservedDirectRecoveryLastIssuedAttemptExecuteAt time.Time             `json:"observed_direct_recovery_last_issued_attempt_execute_at,omitempty"`
 	ObservedDirectRecoveryDecisionStatus             string                `json:"observed_direct_recovery_decision_status,omitempty"`
@@ -230,14 +240,15 @@ type HeartbeatRequest struct {
 }
 
 type DirectAttemptInstruction struct {
-	AttemptID     string    `json:"attempt_id"`
-	PeerNodeID    string    `json:"peer_node_id"`
-	IssuedAt      time.Time `json:"issued_at,omitempty"`
-	ExecuteAt     time.Time `json:"execute_at"`
-	Window        int64     `json:"window,omitempty"`
-	BurstInterval int64     `json:"burst_interval,omitempty"`
-	Candidates    []string  `json:"candidates,omitempty"`
-	Reason        string    `json:"reason,omitempty"`
+	AttemptID     string                   `json:"attempt_id"`
+	PeerNodeID    string                   `json:"peer_node_id"`
+	IssuedAt      time.Time                `json:"issued_at,omitempty"`
+	ExecuteAt     time.Time                `json:"execute_at"`
+	Window        int64                    `json:"window,omitempty"`
+	BurstInterval int64                    `json:"burst_interval,omitempty"`
+	Candidates    []DirectAttemptCandidate `json:"candidates,omitempty"`
+	Profile       string                   `json:"profile,omitempty"`
+	Reason        string                   `json:"reason,omitempty"`
 }
 
 type HeartbeatResponse struct {

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"nodeweave/packages/contracts/go/api"
 	"nodeweave/packages/runtime/go/dataplane"
 	"nodeweave/packages/runtime/go/session"
 )
@@ -19,6 +20,15 @@ type testSink struct {
 func (s testSink) HandleInbound(_ context.Context, packet dataplane.InboundPacket) error {
 	s.received <- packet
 	return nil
+}
+
+func testDirectAttemptCandidate(address string) api.DirectAttemptCandidate {
+	return api.DirectAttemptCandidate{
+		Address:  address,
+		Source:   "heartbeat",
+		Priority: 1000,
+		Phase:    api.DirectAttemptPhasePrimary,
+	}
 }
 
 func TestTransportHandshakeAndEncryptedFrameDelivery(t *testing.T) {
@@ -157,8 +167,8 @@ func TestRecordDirectAttemptResultTracksFailureBudget(t *testing.T) {
 	}
 	attemptedAt := time.Now().UTC()
 
-	transport.recordDirectAttemptResult("node-b", "attempt-1", "relay_active", attemptedAt, "timeout")
-	transport.recordDirectAttemptResult("node-b", "attempt-2", "manual_recover", attemptedAt.Add(1*time.Second), "relay_kept")
+	transport.recordDirectAttemptResult("node-b", "attempt-1", "relay_active", attemptedAt, "timeout", "", api.DirectAttemptPhasePrimary, 1)
+	transport.recordDirectAttemptResult("node-b", "attempt-2", "manual_recover", attemptedAt.Add(1*time.Second), "relay_kept", "", api.DirectAttemptPhasePrimary, 1)
 
 	report := transport.Snapshot()
 	if len(report.Peers) != 1 {
@@ -169,7 +179,7 @@ func TestRecordDirectAttemptResultTracksFailureBudget(t *testing.T) {
 	}
 
 	successAt := attemptedAt.Add(2 * time.Second)
-	transport.recordDirectAttemptResult("node-b", "attempt-3", "manual_recover", successAt, "success")
+	transport.recordDirectAttemptResult("node-b", "attempt-3", "manual_recover", successAt, "success", "stun", api.DirectAttemptPhasePrimary, 1)
 
 	report = transport.Snapshot()
 	if report.Peers[0].ConsecutiveDirectFailures != 0 {
@@ -638,7 +648,7 @@ func TestExecuteDirectAttemptEstablishesDirectPath(t *testing.T) {
 	result, err := transportA.ExecuteDirectAttempt(context.Background(), DirectAttempt{
 		AttemptID:     "attempt-success",
 		PeerNodeID:    "node-b",
-		Candidates:    []string{transportB.Address()},
+		Candidates:    []api.DirectAttemptCandidate{testDirectAttemptCandidate(transportB.Address())},
 		Window:        400 * time.Millisecond,
 		BurstInterval: 50 * time.Millisecond,
 		Reason:        "fresh_endpoints",
@@ -653,6 +663,9 @@ func TestExecuteDirectAttemptEstablishesDirectPath(t *testing.T) {
 	snapshot := transportA.Snapshot()
 	if snapshot.Peers[0].LastDirectAttemptID != "attempt-success" || snapshot.Peers[0].LastDirectAttemptResult != "success" {
 		t.Fatalf("expected attempt result in snapshot, got %#v", snapshot.Peers[0])
+	}
+	if snapshot.Peers[0].LastDirectAttemptPhase != api.DirectAttemptPhasePrimary || snapshot.Peers[0].LastDirectAttemptReachedSource != "heartbeat" || snapshot.Peers[0].LastDirectAttemptCandidateCount != 1 {
+		t.Fatalf("expected attempt phase/source/count in snapshot, got %#v", snapshot.Peers[0])
 	}
 
 	cancel()
@@ -701,7 +714,7 @@ func TestExecuteDirectAttemptKeepsRelayOnTimeout(t *testing.T) {
 	result, err := transportA.ExecuteDirectAttempt(context.Background(), DirectAttempt{
 		AttemptID:     "attempt-relay-kept",
 		PeerNodeID:    "node-b",
-		Candidates:    []string{"127.0.0.1:1"},
+		Candidates:    []api.DirectAttemptCandidate{testDirectAttemptCandidate("127.0.0.1:1")},
 		Window:        120 * time.Millisecond,
 		BurstInterval: 40 * time.Millisecond,
 		Reason:        "relay_active",
@@ -743,7 +756,7 @@ func TestExecuteDirectAttemptCancelledBeforeExecution(t *testing.T) {
 	result, err := transportA.ExecuteDirectAttempt(ctx, DirectAttempt{
 		AttemptID:  "attempt-cancelled",
 		PeerNodeID: "node-b",
-		Candidates: []string{"127.0.0.1:1"},
+		Candidates: []api.DirectAttemptCandidate{testDirectAttemptCandidate("127.0.0.1:1")},
 		ExecuteAt:  time.Now().UTC().Add(500 * time.Millisecond),
 		Window:     200 * time.Millisecond,
 		Reason:     "manual_recover",
@@ -808,7 +821,7 @@ func TestExecuteDirectAttemptStartsShortlyBeforeExecuteAt(t *testing.T) {
 	_, err = transportA.ExecuteDirectAttempt(context.Background(), DirectAttempt{
 		AttemptID:     "attempt-prewarm-lead",
 		PeerNodeID:    "node-b",
-		Candidates:    []string{sniffer.LocalAddr().String()},
+		Candidates:    []api.DirectAttemptCandidate{testDirectAttemptCandidate(sniffer.LocalAddr().String())},
 		ExecuteAt:     executeAt,
 		Window:        120 * time.Millisecond,
 		BurstInterval: 50 * time.Millisecond,
@@ -829,6 +842,194 @@ func TestExecuteDirectAttemptStartsShortlyBeforeExecuteAt(t *testing.T) {
 	}
 	if !firstPacketAt.Before(executeAt) {
 		t.Fatalf("expected first hello burst before execute_at=%s, got %s", executeAt.Format(time.RFC3339Nano), firstPacketAt.Format(time.RFC3339Nano))
+	}
+}
+
+func TestExecuteDirectAttemptStartsSecondaryPhaseAtExecuteAt(t *testing.T) {
+	privateKeyA, _, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair A: %v", err)
+	}
+	_, fakePublicKeyB, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate fake key pair B: %v", err)
+	}
+
+	secondarySniffer, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen secondary sniffer: %v", err)
+	}
+	defer func() { _ = secondarySniffer.Close() }()
+
+	packetAtCh := make(chan time.Time, 8)
+	go func() {
+		buffer := make([]byte, 2048)
+		for {
+			if err := secondarySniffer.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				return
+			}
+			if _, _, err := secondarySniffer.ReadFrom(buffer); err != nil {
+				return
+			}
+			select {
+			case packetAtCh <- time.Now().UTC():
+			default:
+			}
+		}
+	}()
+
+	transportA, err := Listen(Config{
+		NodeID:                 "node-a",
+		ListenAddress:          "127.0.0.1:0",
+		PrivateKey:             privateKeyA,
+		HandshakeTimeout:       500 * time.Millisecond,
+		HandshakeRetryInterval: 50 * time.Millisecond,
+		Peers: []session.Peer{
+			{NodeID: "node-b", PublicKey: fakePublicKeyB},
+		},
+	})
+	if err != nil {
+		t.Fatalf("listen transport A: %v", err)
+	}
+	defer func() { _ = transportA.Close() }()
+
+	executeAt := time.Now().UTC().Add(180 * time.Millisecond)
+	_, err = transportA.ExecuteDirectAttempt(context.Background(), DirectAttempt{
+		AttemptID:  "attempt-secondary-phase",
+		PeerNodeID: "node-b",
+		Candidates: []api.DirectAttemptCandidate{
+			{Address: "127.0.0.1:1", Source: "stun", Priority: 1000, Phase: api.DirectAttemptPhasePrimary},
+			{Address: secondarySniffer.LocalAddr().String(), Source: "static", Priority: 900, Phase: api.DirectAttemptPhaseSecondary},
+		},
+		ExecuteAt:     executeAt,
+		Window:        120 * time.Millisecond,
+		BurstInterval: 50 * time.Millisecond,
+		Reason:        "manual_recover",
+	})
+	if err == nil {
+		t.Fatal("expected timeout without responder")
+	}
+
+	firstSecondaryPacketAt := time.Time{}
+	deadline := time.After(700 * time.Millisecond)
+	for firstSecondaryPacketAt.IsZero() {
+		select {
+		case firstSecondaryPacketAt = <-packetAtCh:
+		case <-deadline:
+			t.Fatal("timed out waiting for secondary phase packet")
+		}
+	}
+	if firstSecondaryPacketAt.Before(executeAt) {
+		t.Fatalf("expected secondary phase to start at/after execute_at=%s, got %s", executeAt.Format(time.RFC3339Nano), firstSecondaryPacketAt.Format(time.RFC3339Nano))
+	}
+}
+
+func TestExecuteDirectAttemptPrimarySuccessSkipsSecondaryPhase(t *testing.T) {
+	privateKeyA, publicKeyA, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair A: %v", err)
+	}
+	privateKeyB, publicKeyB, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair B: %v", err)
+	}
+
+	secondarySniffer, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen secondary sniffer: %v", err)
+	}
+	defer func() { _ = secondarySniffer.Close() }()
+
+	packetAtCh := make(chan struct{}, 4)
+	go func() {
+		buffer := make([]byte, 2048)
+		for {
+			if err := secondarySniffer.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+				return
+			}
+			if _, _, err := secondarySniffer.ReadFrom(buffer); err != nil {
+				return
+			}
+			select {
+			case packetAtCh <- struct{}{}:
+			default:
+			}
+		}
+	}()
+
+	transportA, err := Listen(Config{
+		NodeID:                 "node-a",
+		ListenAddress:          "127.0.0.1:0",
+		PrivateKey:             privateKeyA,
+		HandshakeTimeout:       400 * time.Millisecond,
+		HandshakeRetryInterval: 50 * time.Millisecond,
+		Peers: []session.Peer{
+			{NodeID: "node-b", PublicKey: publicKeyB, Candidates: []session.Candidate{{Kind: "direct", Address: "127.0.0.1:1", Priority: 1000}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("listen transport A: %v", err)
+	}
+	defer func() { _ = transportA.Close() }()
+
+	transportB, err := Listen(Config{
+		NodeID:                 "node-b",
+		ListenAddress:          "127.0.0.1:0",
+		PrivateKey:             privateKeyB,
+		HandshakeTimeout:       400 * time.Millisecond,
+		HandshakeRetryInterval: 50 * time.Millisecond,
+		Peers: []session.Peer{
+			{NodeID: "node-a", PublicKey: publicKeyA, Candidates: []session.Candidate{{Kind: "direct", Address: transportA.Address(), Priority: 1000}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("listen transport B: %v", err)
+	}
+	defer func() { _ = transportB.Close() }()
+
+	transportA.peerCandidates["node-b"][0].Address = transportB.Address()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- transportA.Serve(ctx, func(context.Context, dataplane.Frame, net.Addr) error { return nil })
+	}()
+	go func() {
+		errCh <- transportB.Serve(ctx, func(context.Context, dataplane.Frame, net.Addr) error { return nil })
+	}()
+
+	executeAt := time.Now().UTC().Add(180 * time.Millisecond)
+	result, err := transportA.ExecuteDirectAttempt(context.Background(), DirectAttempt{
+		AttemptID:  "attempt-primary-success-only",
+		PeerNodeID: "node-b",
+		Candidates: []api.DirectAttemptCandidate{
+			{Address: transportB.Address(), Source: "stun", Priority: 1000, Phase: api.DirectAttemptPhasePrimary},
+			{Address: secondarySniffer.LocalAddr().String(), Source: "static", Priority: 900, Phase: api.DirectAttemptPhaseSecondary},
+		},
+		ExecuteAt:     executeAt,
+		Window:        180 * time.Millisecond,
+		BurstInterval: 50 * time.Millisecond,
+		Reason:        "fresh_endpoints",
+	})
+	if err != nil {
+		t.Fatalf("execute direct attempt: %v", err)
+	}
+	if result.Result != "success" || result.Phase != api.DirectAttemptPhasePrimary {
+		t.Fatalf("expected primary phase success, got %#v", result)
+	}
+
+	select {
+	case <-packetAtCh:
+		t.Fatal("expected secondary phase to stay idle after primary success")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	cancel()
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatalf("transport serve: %v", err)
+		}
 	}
 }
 

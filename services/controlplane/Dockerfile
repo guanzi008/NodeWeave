@@ -3,8 +3,12 @@ FROM golang:1.26.1-alpine AS build
 WORKDIR /src
 
 COPY go.work ./
+COPY clients/linux-agent ./clients/linux-agent
+COPY clients/linux-cli ./clients/linux-cli
 COPY packages/contracts/go ./packages/contracts/go
+COPY packages/runtime/go ./packages/runtime/go
 COPY services/controlplane ./services/controlplane
+COPY services/relay ./services/relay
 
 WORKDIR /src/services/controlplane
 RUN go mod download
@@ -28,4 +32,3 @@ USER app
 EXPOSE 8080
 
 ENTRYPOINT ["controlplane"]
-

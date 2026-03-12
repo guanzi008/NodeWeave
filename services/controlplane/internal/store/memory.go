@@ -321,7 +321,7 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 	selfTransportStates := s.peerTransports[selfNodeID]
 	policy := directAttemptPolicyFromConfig(s.cfg)
 	now := time.Now().UTC()
-	selfCandidates := freshDirectCandidateAddressesWithPolicy(selfNode, now, policy)
+	selfDirectCandidates := freshDirectAttemptCandidatesWithPolicy(selfNode, now, policy)
 
 	routes := make([]api.Route, 0, len(s.routes))
 	for _, route := range s.routes {
@@ -348,7 +348,7 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 		if node.ID == selfNodeID {
 			continue
 		}
-		peerCandidates := freshDirectCandidateAddressesWithPolicy(node, now, policy)
+		peerDirectCandidates := freshDirectAttemptCandidatesWithPolicy(node, now, policy)
 		peerTransportState := api.PeerTransportState{}
 		if peerStates, ok := s.peerTransports[node.ID]; ok {
 			peerTransportState = peerStates[selfNodeID]
@@ -358,7 +358,7 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 		if hasAttempt {
 			latestAttemptPtr = &latestAttempt
 		}
-		recoveryState := recoveryStateForPeer(selfNode, node, selfCandidates, peerCandidates, selfTransportStates[node.ID], peerTransportState, now, policy, latestAttemptPtr)
+		recoveryState := recoveryStateForPeerCandidates(selfNode, node, selfDirectCandidates, peerDirectCandidates, selfTransportStates[node.ID], peerTransportState, now, policy, latestAttemptPtr)
 		peer := api.Peer{
 			NodeID:          node.ID,
 			OverlayIP:       node.OverlayIP,
@@ -379,6 +379,10 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 			peer.ObservedTransportReportedAt = peerTransportState.ReportedAt
 			peer.ObservedLastDirectAttemptAt = peerTransportState.LastDirectAttemptAt
 			peer.ObservedLastDirectAttemptResult = peerTransportState.LastDirectAttemptResult
+			peer.ObservedLastDirectAttemptProfile = peerTransportState.LastDirectAttemptProfile
+			peer.ObservedLastDirectAttemptReachedSource = peerTransportState.LastDirectAttemptReachedSource
+			peer.ObservedLastDirectAttemptPhase = peerTransportState.LastDirectAttemptPhase
+			peer.ObservedLastDirectAttemptCandidateCount = peerTransportState.LastDirectAttemptCandidateCount
 			peer.ObservedLastDirectSuccessAt = peerTransportState.LastDirectSuccessAt
 			peer.ObservedConsecutiveDirectFailures = peerTransportState.ConsecutiveDirectFailures
 		}
@@ -396,6 +400,7 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 		if recoveryState.LastIssuedAttemptID != "" {
 			peer.ObservedDirectRecoveryLastIssuedAttemptID = recoveryState.LastIssuedAttemptID
 			peer.ObservedDirectRecoveryLastIssuedAttemptReason = recoveryState.LastIssuedAttemptReason
+			peer.ObservedDirectRecoveryLastIssuedAttemptProfile = recoveryState.LastIssuedAttemptProfile
 			peer.ObservedDirectRecoveryLastIssuedAttemptAt = recoveryState.LastIssuedAttemptAt
 			peer.ObservedDirectRecoveryLastIssuedAttemptExecuteAt = recoveryState.LastIssuedAttemptExecuteAt
 		}
@@ -451,13 +456,13 @@ func (s *MemoryStore) directAttemptRecoveryStatesForNodeLocked(nodeID string, no
 	}
 	selfStates := s.peerTransports[nodeID]
 	policy := directAttemptPolicyFromConfig(s.cfg)
-	selfCandidates := freshDirectCandidateAddressesWithPolicy(selfNode, now, policy)
+	selfDirectCandidates := freshDirectAttemptCandidatesWithPolicy(selfNode, now, policy)
 	states := make([]api.PeerRecoveryState, 0, len(s.nodes))
 	for peerID, peerNode := range s.nodes {
 		if peerID == nodeID {
 			continue
 		}
-		peerCandidates := freshDirectCandidateAddressesWithPolicy(peerNode, now, policy)
+		peerDirectCandidates := freshDirectAttemptCandidatesWithPolicy(peerNode, now, policy)
 		peerState := api.PeerTransportState{}
 		if reportedByPeer, ok := s.peerTransports[peerID]; ok {
 			peerState = reportedByPeer[nodeID]
@@ -467,7 +472,7 @@ func (s *MemoryStore) directAttemptRecoveryStatesForNodeLocked(nodeID string, no
 		if hasAttempt {
 			latestAttemptPtr = &latestAttempt
 		}
-		recoveryState := recoveryStateForPeer(selfNode, peerNode, selfCandidates, peerCandidates, selfStates[peerID], peerState, now, policy, latestAttemptPtr)
+		recoveryState := recoveryStateForPeerCandidates(selfNode, peerNode, selfDirectCandidates, peerDirectCandidates, selfStates[peerID], peerState, now, policy, latestAttemptPtr)
 		states = append(states, recoveryState)
 	}
 	sort.Slice(states, func(i, j int) bool {
@@ -501,8 +506,8 @@ func (s *MemoryStore) scheduleDirectAttemptsLocked(now time.Time, nodeID string)
 	if !ok || !isNodeOnlineWithPolicy(node, now, policy) {
 		return
 	}
-	nodeCandidates := freshDirectCandidateAddressesWithPolicy(node, now, policy)
-	if len(nodeCandidates) == 0 {
+	nodeDirectCandidates := freshDirectAttemptCandidatesWithPolicy(node, now, policy)
+	if len(nodeDirectCandidates) == 0 {
 		return
 	}
 
@@ -514,8 +519,8 @@ func (s *MemoryStore) scheduleDirectAttemptsLocked(now time.Time, nodeID string)
 		if !isNodeOnlineWithPolicy(peer, now, policy) {
 			continue
 		}
-		peerCandidates := freshDirectCandidateAddressesWithPolicy(peer, now, policy)
-		if len(peerCandidates) == 0 {
+		peerDirectCandidates := freshDirectAttemptCandidatesWithPolicy(peer, now, policy)
+		if len(peerDirectCandidates) == 0 {
 			continue
 		}
 		key := pairKey(node.ID, peer.ID)
@@ -523,17 +528,22 @@ func (s *MemoryStore) scheduleDirectAttemptsLocked(now time.Time, nodeID string)
 			continue
 		}
 		peerTransportStates := s.peerTransports[peer.ID]
-		reason, schedule := directAttemptReasonWithPolicy(nodeTransportStates[peer.ID], peerTransportStates[node.ID], now, policy)
+		reason, schedule := directAttemptReasonWithPolicyCandidates(nodeDirectCandidates, peerDirectCandidates, nodeTransportStates[peer.ID], peerTransportStates[node.ID], now, policy)
 		if !schedule {
 			continue
 		}
 		left, right := node, peer
-		leftCandidates, rightCandidates := nodeCandidates, peerCandidates
+		leftCandidates, rightCandidates := nodeDirectCandidates, peerDirectCandidates
 		if pairKey(node.ID, peer.ID) != node.ID+"|"+peer.ID {
 			left, right = peer, node
-			leftCandidates, rightCandidates = peerCandidates, nodeCandidates
+			leftCandidates, rightCandidates = peerDirectCandidates, nodeDirectCandidates
 		}
-		s.directAttempts[key] = newDirectAttemptPair(now, left, right, leftCandidates, rightCandidates, reason, policy)
+		leftState := nodeTransportStates[peer.ID]
+		rightState := peerTransportStates[node.ID]
+		if key != node.ID+"|"+peer.ID {
+			leftState, rightState = rightState, leftState
+		}
+		s.directAttempts[key] = newDirectAttemptPair(now, left, right, leftCandidates, rightCandidates, reason, policy, leftState, rightState)
 	}
 }
 

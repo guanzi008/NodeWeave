@@ -190,6 +190,14 @@ components:
           format: date-time
         last_direct_attempt_result:
           type: string
+        last_direct_attempt_profile:
+          type: string
+        last_direct_attempt_reached_source:
+          type: string
+        last_direct_attempt_phase:
+          type: string
+        last_direct_attempt_candidate_count:
+          type: integer
         last_direct_success_at:
           type: string
           format: date-time
@@ -224,6 +232,8 @@ components:
         last_issued_attempt_id:
           type: string
         last_issued_attempt_reason:
+          type: string
+        last_issued_attempt_profile:
           type: string
         last_issued_attempt_at:
           type: string
@@ -263,8 +273,24 @@ components:
         candidates:
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/DirectAttemptCandidate"
+        profile:
+          type: string
         reason:
+          type: string
+    DirectAttemptCandidate:
+      type: object
+      properties:
+        address:
+          type: string
+        source:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        priority:
+          type: integer
+        phase:
           type: string
     Peer:
       type: object
@@ -314,6 +340,14 @@ components:
           format: date-time
         observed_last_direct_attempt_result:
           type: string
+        observed_last_direct_attempt_profile:
+          type: string
+        observed_last_direct_attempt_reached_source:
+          type: string
+        observed_last_direct_attempt_phase:
+          type: string
+        observed_last_direct_attempt_candidate_count:
+          type: integer
         observed_last_direct_success_at:
           type: string
           format: date-time
@@ -343,6 +377,8 @@ components:
         observed_direct_recovery_last_issued_attempt_id:
           type: string
         observed_direct_recovery_last_issued_attempt_reason:
+          type: string
+        observed_direct_recovery_last_issued_attempt_profile:
           type: string
         observed_direct_recovery_last_issued_attempt_at:
           type: string

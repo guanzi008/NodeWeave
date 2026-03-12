@@ -130,6 +130,92 @@ func TestSQLiteStorePersistsHeartbeatPublicKeyRotationAcrossRestart(t *testing.T
 	}
 }
 
+func TestSQLiteStoreReadsLegacyDirectAttemptCandidatesJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := config.Config{
+		StorageDriver:     "sqlite",
+		SQLitePath:        filepath.Join(tmpDir, "controlplane.db"),
+		AdminEmail:        "admin@example.com",
+		AdminPassword:     "dev-password",
+		AdminToken:        "dev-admin-token",
+		RegistrationToken: "dev-register-token",
+		DNSDomain:         "internal.net",
+		RelayAddresses:    []string{"relay-ap-1.example.net:3478"},
+	}
+
+	store, err := NewSQLiteStore(cfg)
+	if err != nil {
+		t.Fatalf("create sqlite store: %v", err)
+	}
+	defer func() {
+		_ = store.Close()
+	}()
+
+	left, err := store.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "legacy-left",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-left",
+		RegistrationToken: cfg.RegistrationToken,
+	})
+	if err != nil {
+		t.Fatalf("register left node: %v", err)
+	}
+	right, err := store.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "legacy-right",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-right",
+		RegistrationToken: cfg.RegistrationToken,
+	})
+	if err != nil {
+		t.Fatalf("register right node: %v", err)
+	}
+
+	now := time.Now().UTC()
+	tx, err := store.db.Begin()
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	executeAt := now.Add(500 * time.Millisecond)
+	expiresAt := executeAt.Add(2 * time.Second)
+	if _, err := tx.Exec(`
+		INSERT INTO direct_attempts (
+			attempt_id, pair_key, node_a_id, node_b_id, node_a_candidates_json, node_b_candidates_json,
+			issued_at, execute_at, window_millis, burst_interval_millis, reason, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		"attempt-legacy",
+		pairKey(left.Node.ID, right.Node.ID),
+		left.Node.ID,
+		right.Node.ID,
+		`["198.51.100.10:51820"]`,
+		`["198.51.100.11:51820"]`,
+		now.Format(time.RFC3339Nano),
+		executeAt.Format(time.RFC3339Nano),
+		int64(600),
+		int64(80),
+		"manual_recover",
+		expiresAt.Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert legacy direct attempt: %v", err)
+	}
+
+	attempts, err := store.directAttemptsForNodeTx(tx, left.Node.ID, now)
+	if err != nil {
+		t.Fatalf("load direct attempts: %v", err)
+	}
+	if len(attempts) != 1 || len(attempts[0].Candidates) != 1 {
+		t.Fatalf("unexpected migrated direct attempts: %#v", attempts)
+	}
+	candidate := attempts[0].Candidates[0]
+	if candidate.Address != "198.51.100.10:51820" || candidate.Source != "heartbeat" || candidate.Phase != api.DirectAttemptPhasePrimary {
+		t.Fatalf("unexpected migrated sqlite candidate: %#v", candidate)
+	}
+}
+
 func TestSQLiteStorePersistsEndpointRecordsAcrossRestart(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := config.Config{
@@ -405,6 +491,18 @@ func TestSQLiteStorePersistsNATSummaryAndSchedulesDirectAttempt(t *testing.T) {
 		EndpointRecords: []api.EndpointObservation{
 			{Address: "203.0.113.10:51820", Source: "stun"},
 		},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:                      nodeA.Node.ID,
+			ActiveKind:                      "relay",
+			ActiveAddress:                   "relay-ap-1.example.net:3478",
+			ReportedAt:                      time.Now().UTC(),
+			LastDirectAttemptAt:             time.Now().UTC().Add(-2 * time.Second),
+			LastDirectAttemptResult:         "success",
+			LastDirectAttemptProfile:        "primary_upgrade",
+			LastDirectAttemptReachedSource:  "stun",
+			LastDirectAttemptPhase:          api.DirectAttemptPhasePrimary,
+			LastDirectAttemptCandidateCount: 2,
+		}},
 		NATReport: api.NATReport{
 			GeneratedAt:              time.Now().UTC(),
 			MappingBehavior:          "varying_port",
@@ -435,11 +533,11 @@ func TestSQLiteStorePersistsNATSummaryAndSchedulesDirectAttempt(t *testing.T) {
 	if bootstrap.Peers[0].NATMappingBehavior != "varying_port" || !bootstrap.Peers[0].NATReachable || bootstrap.Peers[0].NATReportedAt.IsZero() {
 		t.Fatalf("expected NAT summary on bootstrap peer, got %#v", bootstrap.Peers[0])
 	}
-	if bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptID == "" || bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptReason == "" {
+	if bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptID == "" || bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptReason == "" || bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptProfile == "" {
 		t.Fatalf("expected bootstrap peer to expose latest issued direct attempt trace, got %#v", bootstrap.Peers[0])
 	}
-	if bootstrap.Peers[0].ObservedTransportKind != "" {
-		t.Fatalf("expected no observed transport summary from peer without report, got %#v", bootstrap.Peers[0])
+	if bootstrap.Peers[0].ObservedTransportKind != "relay" || bootstrap.Peers[0].ObservedLastDirectAttemptProfile != "primary_upgrade" || bootstrap.Peers[0].ObservedLastDirectAttemptReachedSource != "stun" || bootstrap.Peers[0].ObservedLastDirectAttemptPhase != api.DirectAttemptPhasePrimary || bootstrap.Peers[0].ObservedLastDirectAttemptCandidateCount != 2 {
+		t.Fatalf("expected observed transport phase/source/count from peer report, got %#v", bootstrap.Peers[0])
 	}
 }
 

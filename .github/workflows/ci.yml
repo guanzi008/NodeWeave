@@ -12,11 +12,13 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.1"
+          go-version-file: go.work
+          cache-dependency-path: |
+            **/go.sum
 
       - name: Verify formatting
         run: |
-          test -z "$(gofmt -l services/controlplane/cmd services/controlplane/internal clients/linux-cli clients/linux-agent packages/contracts/go packages/runtime/go)"
+          test -z "$(gofmt -l services/controlplane/cmd services/controlplane/internal services/relay clients/linux-cli clients/linux-agent packages/contracts/go packages/runtime/go)"
 
       - name: Test
         run: make test
@@ -28,4 +30,7 @@ jobs:
         run: bash scripts/e2e_smoke.sh
 
       - name: Build control plane image
-        run: docker build -f services/controlplane/Dockerfile -t aaa-controlplane .
+        run: docker build -f services/controlplane/Dockerfile -t nodeweave-controlplane .
+
+      - name: Build relay image
+        run: docker build -f services/relay/Dockerfile -t nodeweave-relay .

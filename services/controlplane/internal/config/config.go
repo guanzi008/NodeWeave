@@ -44,6 +44,9 @@ type Config struct {
 	DirectAttemptSuppressedProbeInterval          time.Duration
 	DirectAttemptTimeoutSuppressedProbeInterval   time.Duration
 	DirectAttemptRelayKeptSuppressedProbeInterval time.Duration
+	DirectAttemptSuppressedProbeLimit             int
+	DirectAttemptTimeoutSuppressedProbeLimit      int
+	DirectAttemptRelayKeptSuppressedProbeLimit    int
 	RelayActiveAttemptLead                        time.Duration
 	RelayActiveAttemptWindow                      time.Duration
 	RelayActiveAttemptBurstInterval               time.Duration
@@ -58,6 +61,7 @@ func Load() Config {
 	directAttemptFailureSuppressAfter := getEnvInt("CONTROLPLANE_DIRECT_ATTEMPT_FAILURE_SUPPRESS_AFTER", 4)
 	directAttemptFailureSuppressWindow := getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_FAILURE_SUPPRESS_WINDOW", 2*time.Minute)
 	directAttemptSuppressedProbeInterval := getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_SUPPRESSED_PROBE_INTERVAL", 30*time.Second)
+	directAttemptSuppressedProbeLimit := getEnvInt("CONTROLPLANE_DIRECT_ATTEMPT_SUPPRESSED_PROBE_LIMIT", 2)
 
 	return Config{
 		Address:                                       getEnv("CONTROLPLANE_ADDRESS", ":8080"),
@@ -96,6 +100,9 @@ func Load() Config {
 		DirectAttemptSuppressedProbeInterval:          directAttemptSuppressedProbeInterval,
 		DirectAttemptTimeoutSuppressedProbeInterval:   getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_SUPPRESSED_PROBE_INTERVAL", directAttemptSuppressedProbeInterval),
 		DirectAttemptRelayKeptSuppressedProbeInterval: getEnvDuration("CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_SUPPRESSED_PROBE_INTERVAL", directAttemptSuppressedProbeInterval),
+		DirectAttemptSuppressedProbeLimit:             directAttemptSuppressedProbeLimit,
+		DirectAttemptTimeoutSuppressedProbeLimit:      getEnvInt("CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_SUPPRESSED_PROBE_LIMIT", directAttemptSuppressedProbeLimit),
+		DirectAttemptRelayKeptSuppressedProbeLimit:    getEnvInt("CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_SUPPRESSED_PROBE_LIMIT", directAttemptSuppressedProbeLimit),
 		RelayActiveAttemptLead:                        getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD", 200*time.Millisecond),
 		RelayActiveAttemptWindow:                      getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW", 900*time.Millisecond),
 		RelayActiveAttemptBurstInterval:               getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL", 60*time.Millisecond),

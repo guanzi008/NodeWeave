@@ -85,8 +85,9 @@ go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.js
 - 如果最近一次 direct attempt 结果已经上报为 `timeout` 或 `relay_kept`，控制面会进入短暂冷却窗口，避免 agent 被连续打洞指令刷屏；这两个结果现在可以配置不同的 cooldown
 - 冷却结束后如果 relay 仍持续活跃，控制面下发的后续恢复指令会标记为 `manual_recover`，并可使用比普通 `fresh_endpoints` 更激进的独立时间窗；`timeout` 和 `relay_kept` 也可以配置不同的升级阈值
 - heartbeat 上报的 peer transport 摘要现在还会带最近一次 direct success 时间和连续失败次数，控制面可以据此在失败预算耗尽后临时抑制恢复
-- heartbeat 响应里的 `peer_recovery_states` 会落到本地 `recovery_state_path`，`recovery-status` 可直接查看当前哪些 peer 被 controlplane block、block 原因、截止时间和 `next_probe_at`
+- heartbeat 响应里的 `peer_recovery_states` 会落到本地 `recovery_state_path`，`recovery-status` 可直接查看当前哪些 peer 被 controlplane block、block 原因、截止时间、`next_probe_at` 和剩余 probe 配额
 - 如果 suppression 仍未结束，但 controlplane 配置了 `*_SUPPRESSED_PROBE_INTERVAL`，后续 heartbeat 里仍可能收到一小批 `manual_recover` 指令做稀疏恢复尝试
+- 如果 controlplane 同时配置了 `*_SUPPRESSED_PROBE_LIMIT`，当剩余 probe 配额耗尽后，agent 将只看到 block 状态更新，不会再收到新的 suppressed probe 恢复指令
 - 最新 STUN 结果会写入 `stun_report_path`
 - `stun-status` 可查看各个 server 的可达性、RTT 和当前选中的 reflexive address
 - 当 `secure-udp` 数据面已经运行时，STUN 会复用同一个 UDP 监听 socket，对外发现出的 reflexive port 会和真实数据面端口一致；只有数据面还没启动时才回退到独立探测 socket

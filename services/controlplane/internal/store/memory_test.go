@@ -642,16 +642,18 @@ func TestMemoryStoreUsesRelayKeptManualRecoverThresholdOverride(t *testing.T) {
 
 func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 	dataStore := NewMemoryStore(config.Config{
-		AdminEmail:                         "admin@example.com",
-		AdminPassword:                      "dev-password",
-		AdminToken:                         "dev-admin-token",
-		RegistrationToken:                  "dev-register-token",
-		DNSDomain:                          "internal.net",
-		DirectAttemptCooldown:              2 * time.Second,
-		DirectAttemptFailureSuppressAfter:  3,
-		DirectAttemptFailureSuppressWindow: 2 * time.Minute,
-		DirectAttemptTimeoutSuppressAfter:  3,
-		DirectAttemptTimeoutSuppressWindow: 2 * time.Minute,
+		AdminEmail:                               "admin@example.com",
+		AdminPassword:                            "dev-password",
+		AdminToken:                               "dev-admin-token",
+		RegistrationToken:                        "dev-register-token",
+		DNSDomain:                                "internal.net",
+		DirectAttemptCooldown:                    2 * time.Second,
+		DirectAttemptFailureSuppressAfter:        3,
+		DirectAttemptFailureSuppressWindow:       2 * time.Minute,
+		DirectAttemptTimeoutSuppressAfter:        3,
+		DirectAttemptTimeoutSuppressWindow:       2 * time.Minute,
+		DirectAttemptSuppressedProbeLimit:        2,
+		DirectAttemptTimeoutSuppressedProbeLimit: 2,
 	})
 
 	nodeA, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
@@ -709,6 +711,9 @@ func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].BlockReason != "suppressed_timeout_budget" {
 		t.Fatalf("expected suppressed timeout recovery state in heartbeat response, got %#v", resp.PeerRecoveryStates)
 	}
+	if !resp.PeerRecoveryStates[0].ProbeLimited || resp.PeerRecoveryStates[0].ProbeRemaining != 2 {
+		t.Fatalf("expected recovery state to include probe budget details, got %#v", resp.PeerRecoveryStates)
+	}
 
 	bootstrap, err := dataStore.GetBootstrap(nodeB.Node.ID, nodeB.NodeToken)
 	if err != nil {
@@ -719,6 +724,9 @@ func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 	}
 	if !bootstrap.Peers[0].ObservedDirectRecoveryBlocked || bootstrap.Peers[0].ObservedDirectRecoveryBlockReason != "suppressed_timeout_budget" {
 		t.Fatalf("expected observed recovery block state in bootstrap peer, got %#v", bootstrap.Peers)
+	}
+	if !bootstrap.Peers[0].ObservedDirectRecoveryProbeLimited || bootstrap.Peers[0].ObservedDirectRecoveryProbeRemaining != 2 {
+		t.Fatalf("expected observed recovery probe budget in bootstrap peer, got %#v", bootstrap.Peers)
 	}
 }
 
@@ -731,6 +739,7 @@ func TestMemoryStoreSchedulesSuppressedProbeAfterInterval(t *testing.T) {
 		DirectAttemptTimeoutSuppressAfter:    3,
 		DirectAttemptTimeoutSuppressWindow:   90 * time.Second,
 		DirectAttemptSuppressedProbeInterval: 15 * time.Second,
+		DirectAttemptSuppressedProbeLimit:    2,
 	}
 	dataStore := NewMemoryStore(cfg)
 
@@ -789,6 +798,9 @@ func TestMemoryStoreSchedulesSuppressedProbeAfterInterval(t *testing.T) {
 	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].NextProbeAt.IsZero() {
 		t.Fatalf("expected recovery state to include next_probe_at, got %#v", resp.PeerRecoveryStates)
 	}
+	if resp.PeerRecoveryStates[0].ProbeRemaining != 2 {
+		t.Fatalf("expected suppressed probe budget to remain available, got %#v", resp.PeerRecoveryStates)
+	}
 
 	bootstrap, err := dataStore.GetBootstrap(nodeB.Node.ID, nodeB.NodeToken)
 	if err != nil {
@@ -796,5 +808,77 @@ func TestMemoryStoreSchedulesSuppressedProbeAfterInterval(t *testing.T) {
 	}
 	if len(bootstrap.Peers) != 1 || bootstrap.Peers[0].ObservedDirectRecoveryNextProbeAt.IsZero() {
 		t.Fatalf("expected bootstrap peer to expose next probe at, got %#v", bootstrap.Peers)
+	}
+	if bootstrap.Peers[0].ObservedDirectRecoveryProbeRemaining != 2 {
+		t.Fatalf("expected bootstrap peer to expose remaining probe budget, got %#v", bootstrap.Peers)
+	}
+}
+
+func TestMemoryStoreStopsSuppressedProbeWhenBudgetExhausted(t *testing.T) {
+	dataStore := NewMemoryStore(config.Config{
+		RegistrationToken:                    "dev-register-token",
+		DirectAttemptCooldown:                2 * time.Second,
+		DirectAttemptFailureSuppressAfter:    3,
+		DirectAttemptFailureSuppressWindow:   90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:    3,
+		DirectAttemptTimeoutSuppressWindow:   90 * time.Second,
+		DirectAttemptSuppressedProbeInterval: 15 * time.Second,
+		DirectAttemptSuppressedProbeLimit:    2,
+	})
+
+	nodeA, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-a",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-a",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node a: %v", err)
+	}
+	nodeB, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-b",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-b",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node b: %v", err)
+	}
+
+	attemptAt := time.Now().UTC().Add(-16 * time.Second)
+	if _, err := dataStore.UpdateHeartbeat(nodeA.Node.ID, nodeA.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "198.51.100.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:                nodeB.Node.ID,
+			ActiveKind:                "relay",
+			ReportedAt:                time.Now().UTC(),
+			LastDirectAttemptAt:       attemptAt,
+			LastDirectAttemptResult:   "timeout",
+			ConsecutiveDirectFailures: 5,
+		}},
+	}); err != nil {
+		t.Fatalf("heartbeat node a: %v", err)
+	}
+	resp, err := dataStore.UpdateHeartbeat(nodeB.Node.ID, nodeB.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "203.0.113.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:          nodeA.Node.ID,
+			ActiveKind:          "relay",
+			ReportedAt:          time.Now().UTC(),
+			LastDirectAttemptAt: attemptAt,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("heartbeat node b: %v", err)
+	}
+	if len(resp.DirectAttempts) != 0 {
+		t.Fatalf("expected exhausted suppressed probe budget to skip direct attempts, got %#v", resp.DirectAttempts)
+	}
+	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].ProbeRemaining != 0 || !resp.PeerRecoveryStates[0].NextProbeAt.IsZero() {
+		t.Fatalf("expected recovery state to show exhausted probe budget, got %#v", resp.PeerRecoveryStates)
 	}
 }

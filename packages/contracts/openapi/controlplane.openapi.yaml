@@ -210,6 +210,14 @@ components:
         next_probe_at:
           type: string
           format: date-time
+        probe_limited:
+          type: boolean
+        probe_budget:
+          type: integer
+        probe_failures:
+          type: integer
+        probe_remaining:
+          type: integer
     DirectAttemptInstruction:
       type: object
       properties:
@@ -295,6 +303,14 @@ components:
         observed_direct_recovery_next_probe_at:
           type: string
           format: date-time
+        observed_direct_recovery_probe_limited:
+          type: boolean
+        observed_direct_recovery_probe_budget:
+          type: integer
+        observed_direct_recovery_probe_failures:
+          type: integer
+        observed_direct_recovery_probe_remaining:
+          type: integer
     HeartbeatRequest:
       type: object
       properties:

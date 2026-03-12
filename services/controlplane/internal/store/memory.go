@@ -379,6 +379,10 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 			peer.ObservedDirectRecoveryBlockReason = recoveryState.BlockReason
 			peer.ObservedDirectRecoveryBlockedUntil = recoveryState.BlockedUntil
 			peer.ObservedDirectRecoveryNextProbeAt = recoveryState.NextProbeAt
+			peer.ObservedDirectRecoveryProbeLimited = recoveryState.ProbeLimited
+			peer.ObservedDirectRecoveryProbeBudget = recoveryState.ProbeBudget
+			peer.ObservedDirectRecoveryProbeFailures = recoveryState.ProbeFailures
+			peer.ObservedDirectRecoveryProbeRemaining = recoveryState.ProbeRemaining
 		}
 		peers = append(peers, peer)
 	}

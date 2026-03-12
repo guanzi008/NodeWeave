@@ -38,6 +38,9 @@ type directAttemptPolicy struct {
 	DirectAttemptSuppressedProbeInterval          time.Duration
 	DirectAttemptTimeoutSuppressedProbeInterval   time.Duration
 	DirectAttemptRelayKeptSuppressedProbeInterval time.Duration
+	DirectAttemptSuppressedProbeLimit             int
+	DirectAttemptTimeoutSuppressedProbeLimit      int
+	DirectAttemptRelayKeptSuppressedProbeLimit    int
 	RelayActiveAttemptLead                        time.Duration
 	RelayActiveAttemptWindow                      time.Duration
 	RelayActiveAttemptBurstInterval               time.Duration
@@ -70,6 +73,9 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 		DirectAttemptSuppressedProbeInterval:          cfg.DirectAttemptSuppressedProbeInterval,
 		DirectAttemptTimeoutSuppressedProbeInterval:   cfg.DirectAttemptTimeoutSuppressedProbeInterval,
 		DirectAttemptRelayKeptSuppressedProbeInterval: cfg.DirectAttemptRelayKeptSuppressedProbeInterval,
+		DirectAttemptSuppressedProbeLimit:             cfg.DirectAttemptSuppressedProbeLimit,
+		DirectAttemptTimeoutSuppressedProbeLimit:      cfg.DirectAttemptTimeoutSuppressedProbeLimit,
+		DirectAttemptRelayKeptSuppressedProbeLimit:    cfg.DirectAttemptRelayKeptSuppressedProbeLimit,
 		RelayActiveAttemptLead:                        cfg.RelayActiveAttemptLead,
 		RelayActiveAttemptWindow:                      cfg.RelayActiveAttemptWindow,
 		RelayActiveAttemptBurstInterval:               cfg.RelayActiveAttemptBurstInterval,
@@ -143,6 +149,15 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	if policy.DirectAttemptRelayKeptSuppressedProbeInterval <= 0 {
 		policy.DirectAttemptRelayKeptSuppressedProbeInterval = policy.DirectAttemptSuppressedProbeInterval
 	}
+	if policy.DirectAttemptSuppressedProbeLimit < 0 {
+		policy.DirectAttemptSuppressedProbeLimit = 0
+	}
+	if policy.DirectAttemptTimeoutSuppressedProbeLimit <= 0 {
+		policy.DirectAttemptTimeoutSuppressedProbeLimit = policy.DirectAttemptSuppressedProbeLimit
+	}
+	if policy.DirectAttemptRelayKeptSuppressedProbeLimit <= 0 {
+		policy.DirectAttemptRelayKeptSuppressedProbeLimit = policy.DirectAttemptSuppressedProbeLimit
+	}
 	if policy.RelayActiveAttemptLead <= 0 {
 		policy.RelayActiveAttemptLead = policy.DirectAttemptLead
 	}
@@ -207,10 +222,14 @@ type directAttemptPair struct {
 }
 
 type directAttemptBlockState struct {
-	Blocked     bool
-	Reason      string
-	Until       time.Time
-	NextProbeAt time.Time
+	Blocked        bool
+	Reason         string
+	Until          time.Time
+	NextProbeAt    time.Time
+	ProbeLimited   bool
+	ProbeBudget    int
+	ProbeFailures  int
+	ProbeRemaining int
 }
 
 func pairKey(left, right string) string {
@@ -570,6 +589,23 @@ func (p directAttemptPolicy) suppressedProbeIntervalForResult(result string) tim
 	}
 }
 
+func (p directAttemptPolicy) suppressedProbeLimitForResult(result string) int {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "timeout":
+		if p.DirectAttemptTimeoutSuppressedProbeLimit > 0 {
+			return p.DirectAttemptTimeoutSuppressedProbeLimit
+		}
+		return p.DirectAttemptSuppressedProbeLimit
+	case "relay_kept":
+		if p.DirectAttemptRelayKeptSuppressedProbeLimit > 0 {
+			return p.DirectAttemptRelayKeptSuppressedProbeLimit
+		}
+		return p.DirectAttemptSuppressedProbeLimit
+	default:
+		return 0
+	}
+}
+
 func directAttemptCooldownStateWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) directAttemptBlockState {
 	if !transportStateFreshWithPolicy(state, now, policy) {
 		return directAttemptBlockState{}
@@ -616,19 +652,36 @@ func directAttemptSuppressionStateWithPolicy(state api.PeerTransportState, now t
 	if !now.Before(until) {
 		return directAttemptBlockState{}
 	}
+	probeLimit := policy.suppressedProbeLimitForResult(state.LastDirectAttemptResult)
+	extraFailures := state.ConsecutiveDirectFailures - threshold
+	if extraFailures < 0 {
+		extraFailures = 0
+	}
+	probeRemaining := 0
+	probeLimited := probeLimit > 0
+	if probeLimited {
+		probeRemaining = probeLimit - extraFailures
+		if probeRemaining < 0 {
+			probeRemaining = 0
+		}
+	}
 	nextProbeAt := time.Time{}
 	probeInterval := policy.suppressedProbeIntervalForResult(state.LastDirectAttemptResult)
-	if probeInterval > 0 {
+	if probeInterval > 0 && (!probeLimited || probeRemaining > 0) {
 		candidate := attemptAt.Add(probeInterval)
 		if candidate.Before(until) {
 			nextProbeAt = candidate
 		}
 	}
 	return directAttemptBlockState{
-		Blocked:     true,
-		Reason:      suppressionReasonForResult(state.LastDirectAttemptResult),
-		Until:       until,
-		NextProbeAt: nextProbeAt,
+		Blocked:        true,
+		Reason:         suppressionReasonForResult(state.LastDirectAttemptResult),
+		Until:          until,
+		NextProbeAt:    nextProbeAt,
+		ProbeLimited:   probeLimited,
+		ProbeBudget:    probeLimit,
+		ProbeFailures:  extraFailures,
+		ProbeRemaining: probeRemaining,
 	}
 }
 
@@ -644,11 +697,15 @@ func recoveryStateForPeer(peerNodeID string, selfState, peerState api.PeerTransp
 		directAttemptBlockStateWithPolicy(peerState, now, policy),
 	)
 	return api.PeerRecoveryState{
-		PeerNodeID:   strings.TrimSpace(peerNodeID),
-		Blocked:      block.Blocked,
-		BlockReason:  block.Reason,
-		BlockedUntil: block.Until,
-		NextProbeAt:  block.NextProbeAt,
+		PeerNodeID:     strings.TrimSpace(peerNodeID),
+		Blocked:        block.Blocked,
+		BlockReason:    block.Reason,
+		BlockedUntil:   block.Until,
+		NextProbeAt:    block.NextProbeAt,
+		ProbeLimited:   block.ProbeLimited,
+		ProbeBudget:    block.ProbeBudget,
+		ProbeFailures:  block.ProbeFailures,
+		ProbeRemaining: block.ProbeRemaining,
 	}
 }
 
@@ -662,6 +719,18 @@ func laterBlockState(left, right directAttemptBlockState) directAttemptBlockStat
 			selected = right
 		}
 		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(selected.Reason)), "suppressed_") {
+			selected.NextProbeAt = time.Time{}
+			selected.ProbeLimited = false
+			selected.ProbeBudget = 0
+			selected.ProbeFailures = 0
+			selected.ProbeRemaining = 0
+			return selected
+		}
+		selected.ProbeLimited = left.ProbeLimited || right.ProbeLimited
+		selected.ProbeBudget = mergeProbeBudget(left, right)
+		selected.ProbeFailures = maxInt(left.ProbeFailures, right.ProbeFailures)
+		selected.ProbeRemaining = mergeProbeRemaining(left, right)
+		if selected.ProbeLimited && selected.ProbeRemaining == 0 {
 			selected.NextProbeAt = time.Time{}
 			return selected
 		}
@@ -683,6 +752,42 @@ func laterBlockState(left, right directAttemptBlockState) directAttemptBlockStat
 	default:
 		return directAttemptBlockState{}
 	}
+}
+
+func mergeProbeBudget(left, right directAttemptBlockState) int {
+	switch {
+	case left.ProbeBudget <= 0:
+		return right.ProbeBudget
+	case right.ProbeBudget <= 0:
+		return left.ProbeBudget
+	case left.ProbeBudget < right.ProbeBudget:
+		return left.ProbeBudget
+	default:
+		return right.ProbeBudget
+	}
+}
+
+func mergeProbeRemaining(left, right directAttemptBlockState) int {
+	switch {
+	case left.ProbeLimited && right.ProbeLimited:
+		if left.ProbeRemaining < right.ProbeRemaining {
+			return left.ProbeRemaining
+		}
+		return right.ProbeRemaining
+	case left.ProbeLimited:
+		return left.ProbeRemaining
+	case right.ProbeLimited:
+		return right.ProbeRemaining
+	default:
+		return 0
+	}
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func cooldownReasonForResult(result string) string {

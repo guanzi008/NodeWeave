@@ -560,11 +560,15 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 			},
 			BootstrapVersion: 2,
 			PeerRecoveryStates: []api.PeerRecoveryState{{
-				PeerNodeID:   "node-b",
-				Blocked:      true,
-				BlockReason:  "suppressed_timeout_budget",
-				BlockedUntil: time.Now().UTC().Add(30 * time.Second),
-				NextProbeAt:  time.Now().UTC().Add(10 * time.Second),
+				PeerNodeID:     "node-b",
+				Blocked:        true,
+				BlockReason:    "suppressed_timeout_budget",
+				BlockedUntil:   time.Now().UTC().Add(30 * time.Second),
+				NextProbeAt:    time.Now().UTC().Add(10 * time.Second),
+				ProbeLimited:   true,
+				ProbeBudget:    2,
+				ProbeFailures:  1,
+				ProbeRemaining: 1,
 			}},
 		}); err != nil {
 			t.Fatalf("encode heartbeat response: %v", err)
@@ -616,6 +620,9 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	}
 	if recoveryStates[0].NextProbeAt.IsZero() {
 		t.Fatalf("expected persisted recovery next probe timestamp, got %#v", recoveryStates)
+	}
+	if !recoveryStates[0].ProbeLimited || recoveryStates[0].ProbeBudget != 2 || recoveryStates[0].ProbeFailures != 1 || recoveryStates[0].ProbeRemaining != 1 {
+		t.Fatalf("expected persisted recovery probe budget details, got %#v", recoveryStates)
 	}
 
 	transportCancel()

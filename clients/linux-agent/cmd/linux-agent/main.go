@@ -45,6 +45,8 @@ func main() {
 		exitIfErr(runDataplaneStatus(os.Args[2:]))
 	case "transport-status":
 		exitIfErr(runTransportStatus(os.Args[2:]))
+	case "recovery-status":
+		exitIfErr(runRecoveryStatus(os.Args[2:]))
 	case "stun-status":
 		exitIfErr(runSTUNStatus(os.Args[2:]))
 	default:
@@ -281,6 +283,25 @@ func runTransportStatus(args []string) error {
 	return printJSON(report)
 }
 
+func runRecoveryStatus(args []string) error {
+	fs := flag.NewFlagSet("recovery-status", flag.ContinueOnError)
+	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+
+	states, err := state.LoadRecoveryStates(cfg.RecoveryStatePath)
+	if err != nil {
+		return err
+	}
+	return printJSON(states)
+}
+
 func runSTUNStatus(args []string) error {
 	fs := flag.NewFlagSet("stun-status", flag.ContinueOnError)
 	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
@@ -301,7 +322,7 @@ func runSTUNStatus(args []string) error {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, "usage: linux-agent <init-config|enroll|run|status|runtime-status|plan-status|apply-status|session-status|session-report|dataplane-status|transport-status|stun-status> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: linux-agent <init-config|enroll|run|status|runtime-status|plan-status|apply-status|session-status|session-report|dataplane-status|transport-status|recovery-status|stun-status> [flags]")
 }
 
 func exitIfErr(err error) {

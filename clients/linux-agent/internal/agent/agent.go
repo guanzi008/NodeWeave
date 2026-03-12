@@ -256,6 +256,9 @@ func (s *Service) sendHeartbeat(ctx context.Context) (api.HeartbeatResponse, err
 	if err := s.persistState(); err != nil {
 		return api.HeartbeatResponse{}, err
 	}
+	if err := state.SaveRecoveryStates(s.cfg.RecoveryStatePath, resp.PeerRecoveryStates); err != nil {
+		return api.HeartbeatResponse{}, fmt.Errorf("save recovery states: %w", err)
+	}
 	s.scheduleDirectAttempts(resp.DirectAttempts)
 	return resp, nil
 }

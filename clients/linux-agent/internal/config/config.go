@@ -25,6 +25,7 @@ type Config struct {
 	SessionReportPath        string        `json:"session_report_path"`
 	DataplanePath            string        `json:"dataplane_path"`
 	TransportReportPath      string        `json:"transport_report_path"`
+	RecoveryStatePath        string        `json:"recovery_state_path"`
 	STUNServers              []string      `json:"stun_servers"`
 	STUNReportPath           string        `json:"stun_report_path"`
 	AdvertiseEndpoints       []string      `json:"advertise_endpoints"`
@@ -90,6 +91,7 @@ func Default() Config {
 		SessionReportPath:        filepath.Join(baseDir, "nodeweave", "linux-agent-session-report.json"),
 		DataplanePath:            filepath.Join(baseDir, "nodeweave", "linux-agent-dataplane.json"),
 		TransportReportPath:      filepath.Join(baseDir, "nodeweave", "linux-agent-transport-report.json"),
+		RecoveryStatePath:        filepath.Join(baseDir, "nodeweave", "linux-agent-recovery-state.json"),
 		STUNServers:              []string{},
 		STUNReportPath:           filepath.Join(baseDir, "nodeweave", "linux-agent-stun-report.json"),
 		AdvertiseEndpoints:       []string{},

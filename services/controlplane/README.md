@@ -68,6 +68,7 @@ go run ./cmd/controlplane
 - `timeout` 和 `relay_kept` 也可以分别配置不同的 `manual_recover` 升级阈值；未单独设置时回退到 `CONTROLPLANE_DIRECT_ATTEMPT_MANUAL_RECOVER_AFTER`
 - direct attempt 连续失败达到预算后，控制面会在 suppression window 内暂停继续恢复；`timeout` 和 `relay_kept` 可以分别配置不同的失败预算和抑制窗口
 - `relay_active` 和 `manual_recover` 可以使用独立的 lead/window/burst profile，不必和 `fresh_endpoints` 共用一套时间窗
+- 当前 block 状态会同时反映到 `HeartbeatResponse.peer_recovery_states` 和 bootstrap peer 摘要里，便于 agent 和运维侧观察恢复治理结果
 
 ## 测试
 

@@ -706,6 +706,9 @@ func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 	if len(resp.DirectAttempts) != 0 {
 		t.Fatalf("expected suppression after repeated failures, got %#v", resp.DirectAttempts)
 	}
+	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].BlockReason != "suppressed_timeout_budget" {
+		t.Fatalf("expected suppressed timeout recovery state in heartbeat response, got %#v", resp.PeerRecoveryStates)
+	}
 
 	bootstrap, err := dataStore.GetBootstrap(nodeB.Node.ID, nodeB.NodeToken)
 	if err != nil {
@@ -713,5 +716,8 @@ func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 	}
 	if len(bootstrap.Peers) != 1 || bootstrap.Peers[0].ObservedConsecutiveDirectFailures != 3 {
 		t.Fatalf("expected observed failure budget in bootstrap peer, got %#v", bootstrap.Peers)
+	}
+	if !bootstrap.Peers[0].ObservedDirectRecoveryBlocked || bootstrap.Peers[0].ObservedDirectRecoveryBlockReason != "suppressed_timeout_budget" {
+		t.Fatalf("expected observed recovery block state in bootstrap peer, got %#v", bootstrap.Peers)
 	}
 }

@@ -191,6 +191,12 @@ type directAttemptPair struct {
 	ExpiresAt       time.Time
 }
 
+type directAttemptBlockState struct {
+	Blocked bool
+	Reason  string
+	Until   time.Time
+}
+
 func pairKey(left, right string) string {
 	left = strings.TrimSpace(left)
 	right = strings.TrimSpace(right)
@@ -401,18 +407,7 @@ func directAttemptCoolingDown(state api.PeerTransportState, now time.Time) bool 
 }
 
 func directAttemptCoolingDownWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
-	if !transportStateFreshWithPolicy(state, now, policy) {
-		return false
-	}
-	cooldown := policy.cooldownForResult(state.LastDirectAttemptResult)
-	if cooldown <= 0 {
-		return false
-	}
-	attemptAt := state.LastDirectAttemptAt.UTC()
-	if attemptAt.IsZero() {
-		attemptAt = state.ReportedAt.UTC()
-	}
-	return now.Sub(attemptAt) < cooldown
+	return directAttemptCooldownStateWithPolicy(state, now, policy).Blocked
 }
 
 func directAttemptReason(selfState, peerState api.PeerTransportState, now time.Time) (string, bool) {
@@ -441,25 +436,7 @@ func directAttemptReasonWithPolicy(selfState, peerState api.PeerTransportState, 
 }
 
 func directAttemptSuppressedWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
-	if !transportStateFreshWithPolicy(state, now, policy) {
-		return false
-	}
-	threshold := policy.suppressAfterForResult(state.LastDirectAttemptResult)
-	window := policy.suppressWindowForResult(state.LastDirectAttemptResult)
-	if threshold <= 0 || window <= 0 {
-		return false
-	}
-	if state.ConsecutiveDirectFailures < threshold {
-		return false
-	}
-	attemptAt := state.LastDirectAttemptAt.UTC()
-	if attemptAt.IsZero() {
-		attemptAt = state.ReportedAt.UTC()
-	}
-	if !state.LastDirectSuccessAt.IsZero() && state.LastDirectSuccessAt.After(attemptAt) {
-		return false
-	}
-	return now.Sub(attemptAt) < window
+	return directAttemptSuppressionStateWithPolicy(state, now, policy).Blocked
 }
 
 func shouldUseManualRecover(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
@@ -546,6 +523,116 @@ func (p directAttemptPolicy) suppressWindowForResult(result string) time.Duratio
 		return p.DirectAttemptFailureSuppressWindow
 	default:
 		return 0
+	}
+}
+
+func directAttemptCooldownStateWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) directAttemptBlockState {
+	if !transportStateFreshWithPolicy(state, now, policy) {
+		return directAttemptBlockState{}
+	}
+	cooldown := policy.cooldownForResult(state.LastDirectAttemptResult)
+	if cooldown <= 0 {
+		return directAttemptBlockState{}
+	}
+	attemptAt := state.LastDirectAttemptAt.UTC()
+	if attemptAt.IsZero() {
+		attemptAt = state.ReportedAt.UTC()
+	}
+	until := attemptAt.Add(cooldown)
+	if !now.Before(until) {
+		return directAttemptBlockState{}
+	}
+	return directAttemptBlockState{
+		Blocked: true,
+		Reason:  cooldownReasonForResult(state.LastDirectAttemptResult),
+		Until:   until,
+	}
+}
+
+func directAttemptSuppressionStateWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) directAttemptBlockState {
+	if !transportStateFreshWithPolicy(state, now, policy) {
+		return directAttemptBlockState{}
+	}
+	threshold := policy.suppressAfterForResult(state.LastDirectAttemptResult)
+	window := policy.suppressWindowForResult(state.LastDirectAttemptResult)
+	if threshold <= 0 || window <= 0 {
+		return directAttemptBlockState{}
+	}
+	if state.ConsecutiveDirectFailures < threshold {
+		return directAttemptBlockState{}
+	}
+	attemptAt := state.LastDirectAttemptAt.UTC()
+	if attemptAt.IsZero() {
+		attemptAt = state.ReportedAt.UTC()
+	}
+	if !state.LastDirectSuccessAt.IsZero() && state.LastDirectSuccessAt.After(attemptAt) {
+		return directAttemptBlockState{}
+	}
+	until := attemptAt.Add(window)
+	if !now.Before(until) {
+		return directAttemptBlockState{}
+	}
+	return directAttemptBlockState{
+		Blocked: true,
+		Reason:  suppressionReasonForResult(state.LastDirectAttemptResult),
+		Until:   until,
+	}
+}
+
+func directAttemptBlockStateWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) directAttemptBlockState {
+	cooldownState := directAttemptCooldownStateWithPolicy(state, now, policy)
+	suppressionState := directAttemptSuppressionStateWithPolicy(state, now, policy)
+	return laterBlockState(cooldownState, suppressionState)
+}
+
+func recoveryStateForPeer(peerNodeID string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy) api.PeerRecoveryState {
+	block := laterBlockState(
+		directAttemptBlockStateWithPolicy(selfState, now, policy),
+		directAttemptBlockStateWithPolicy(peerState, now, policy),
+	)
+	return api.PeerRecoveryState{
+		PeerNodeID:   strings.TrimSpace(peerNodeID),
+		Blocked:      block.Blocked,
+		BlockReason:  block.Reason,
+		BlockedUntil: block.Until,
+	}
+}
+
+func laterBlockState(left, right directAttemptBlockState) directAttemptBlockState {
+	switch {
+	case left.Blocked && right.Blocked:
+		if right.Until.After(left.Until) {
+			return right
+		}
+		return left
+	case left.Blocked:
+		return left
+	case right.Blocked:
+		return right
+	default:
+		return directAttemptBlockState{}
+	}
+}
+
+func cooldownReasonForResult(result string) string {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "timeout":
+		return "cooldown_timeout"
+	case "relay_kept":
+		return "cooldown_relay_kept"
+	default:
+		return ""
+	}
+}
+
+func suppressionReasonForResult(result string) string {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "timeout":
+		return "suppressed_timeout_budget"
+	case "relay_kept":
+		return "suppressed_relay_kept_budget"
+	default:
+		return ""
 	}
 }
 

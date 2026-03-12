@@ -437,15 +437,20 @@ func (s *SQLiteStore) UpdateHeartbeat(nodeID, token string, req api.HeartbeatReq
 	if err != nil {
 		return api.HeartbeatResponse{}, err
 	}
+	recoveryStates, err := s.directAttemptRecoveryStatesForNodeTx(tx, node.ID, now)
+	if err != nil {
+		return api.HeartbeatResponse{}, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return api.HeartbeatResponse{}, fmt.Errorf("commit heartbeat tx: %w", err)
 	}
 
 	return api.HeartbeatResponse{
-		Node:             sanitizeNode(node),
-		BootstrapVersion: bootstrapVersion,
-		DirectAttempts:   directAttempts,
+		Node:               sanitizeNode(node),
+		BootstrapVersion:   bootstrapVersion,
+		DirectAttempts:     directAttempts,
+		PeerRecoveryStates: recoveryStates,
 	}, nil
 }
 
@@ -706,6 +711,11 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 	if err != nil {
 		return nil, err
 	}
+	selfTransportStates, err := s.loadPeerTransportStatesByNodeTx(tx, selfNodeID)
+	if err != nil {
+		return nil, err
+	}
+	policy := directAttemptPolicyFromConfig(s.cfg)
 
 	peers := make([]api.Peer, 0)
 	for rows.Next() {
@@ -713,6 +723,8 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 		if err != nil {
 			return nil, err
 		}
+		peerTransportState := transportStates[node.ID]
+		recoveryState := recoveryStateForPeer(node.ID, selfTransportStates[node.ID], peerTransportState, time.Now().UTC(), policy)
 		peer := api.Peer{
 			NodeID:          node.ID,
 			OverlayIP:       node.OverlayIP,
@@ -727,18 +739,59 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 		if report, ok := natReports[node.ID]; ok {
 			peer.NATMappingBehavior, peer.NATReachable, peer.NATReportedAt = natSummaryForPeer(report)
 		}
-		if transportState, ok := transportStates[node.ID]; ok {
-			peer.ObservedTransportKind = transportState.ActiveKind
-			peer.ObservedTransportAddress = transportState.ActiveAddress
-			peer.ObservedTransportReportedAt = transportState.ReportedAt
-			peer.ObservedLastDirectAttemptAt = transportState.LastDirectAttemptAt
-			peer.ObservedLastDirectAttemptResult = transportState.LastDirectAttemptResult
-			peer.ObservedLastDirectSuccessAt = transportState.LastDirectSuccessAt
-			peer.ObservedConsecutiveDirectFailures = transportState.ConsecutiveDirectFailures
+		if !peerTransportState.ReportedAt.IsZero() {
+			peer.ObservedTransportKind = peerTransportState.ActiveKind
+			peer.ObservedTransportAddress = peerTransportState.ActiveAddress
+			peer.ObservedTransportReportedAt = peerTransportState.ReportedAt
+			peer.ObservedLastDirectAttemptAt = peerTransportState.LastDirectAttemptAt
+			peer.ObservedLastDirectAttemptResult = peerTransportState.LastDirectAttemptResult
+			peer.ObservedLastDirectSuccessAt = peerTransportState.LastDirectSuccessAt
+			peer.ObservedConsecutiveDirectFailures = peerTransportState.ConsecutiveDirectFailures
+		}
+		if recoveryState.Blocked {
+			peer.ObservedDirectRecoveryBlocked = recoveryState.Blocked
+			peer.ObservedDirectRecoveryBlockReason = recoveryState.BlockReason
+			peer.ObservedDirectRecoveryBlockedUntil = recoveryState.BlockedUntil
 		}
 		peers = append(peers, peer)
 	}
 	return peers, nil
+}
+
+func (s *SQLiteStore) directAttemptRecoveryStatesForNodeTx(tx *sql.Tx, nodeID string, now time.Time) ([]api.PeerRecoveryState, error) {
+	selfStates, err := s.loadPeerTransportStatesByNodeTx(tx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	peerStatesForSelf, err := s.loadPeerTransportStatesForTargetTx(tx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(`
+		SELECT id
+		FROM nodes
+		WHERE id <> ?
+		ORDER BY id ASC
+	`, nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("query recovery state peers: %w", err)
+	}
+	defer rows.Close()
+
+	policy := directAttemptPolicyFromConfig(s.cfg)
+	states := make([]api.PeerRecoveryState, 0)
+	for rows.Next() {
+		var peerID string
+		if err := rows.Scan(&peerID); err != nil {
+			return nil, fmt.Errorf("scan recovery state peer: %w", err)
+		}
+		recoveryState := recoveryStateForPeer(peerID, selfStates[peerID], peerStatesForSelf[peerID], now, policy)
+		if !recoveryState.Blocked {
+			continue
+		}
+		states = append(states, recoveryState)
+	}
+	return states, rows.Err()
 }
 
 func (s *SQLiteStore) bootstrapVersionTx(tx *sql.Tx) (int, error) {

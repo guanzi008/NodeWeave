@@ -195,6 +195,18 @@ components:
           format: date-time
         consecutive_direct_failures:
           type: integer
+    PeerRecoveryState:
+      type: object
+      properties:
+        peer_node_id:
+          type: string
+        blocked:
+          type: boolean
+        block_reason:
+          type: string
+        blocked_until:
+          type: string
+          format: date-time
     DirectAttemptInstruction:
       type: object
       properties:
@@ -270,6 +282,13 @@ components:
           format: date-time
         observed_consecutive_direct_failures:
           type: integer
+        observed_direct_recovery_blocked:
+          type: boolean
+        observed_direct_recovery_block_reason:
+          type: string
+        observed_direct_recovery_blocked_until:
+          type: string
+          format: date-time
     HeartbeatRequest:
       type: object
       properties:
@@ -304,3 +323,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DirectAttemptInstruction"
+        peer_recovery_states:
+          type: array
+          items:
+            $ref: "#/components/schemas/PeerRecoveryState"

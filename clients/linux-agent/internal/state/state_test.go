@@ -3,6 +3,7 @@ package state
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"nodeweave/packages/contracts/go/api"
 	"nodeweave/packages/runtime/go/dataplane"
@@ -253,6 +254,32 @@ func TestSaveAndLoadTransportReport(t *testing.T) {
 	}
 	if got.NodeID != want.NodeID || len(got.Peers) != 1 {
 		t.Fatalf("unexpected transport report roundtrip: %#v", got)
+	}
+}
+
+func TestSaveAndLoadRecoveryStates(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "recovery-state.json")
+
+	want := []api.PeerRecoveryState{
+		{
+			PeerNodeID:   "node_2",
+			Blocked:      true,
+			BlockReason:  "suppressed_timeout_budget",
+			BlockedUntil: time.Now().UTC().Add(30 * time.Second),
+		},
+	}
+
+	if err := SaveRecoveryStates(path, want); err != nil {
+		t.Fatalf("save recovery states: %v", err)
+	}
+
+	got, err := LoadRecoveryStates(path)
+	if err != nil {
+		t.Fatalf("load recovery states: %v", err)
+	}
+	if len(got) != 1 || got[0].PeerNodeID != want[0].PeerNodeID || !got[0].Blocked {
+		t.Fatalf("unexpected recovery state roundtrip: %#v", got)
 	}
 }
 

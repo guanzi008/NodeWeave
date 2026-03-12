@@ -517,6 +517,9 @@ func TestSQLiteBootstrapIncludesObservedFailureBudget(t *testing.T) {
 	if len(resp.DirectAttempts) != 0 {
 		t.Fatalf("expected failure suppression to skip direct attempts, got %#v", resp.DirectAttempts)
 	}
+	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].BlockReason != "suppressed_timeout_budget" {
+		t.Fatalf("expected suppressed timeout recovery state in heartbeat response, got %#v", resp.PeerRecoveryStates)
+	}
 
 	bootstrap, err := dataStore.GetBootstrap(nodeB.Node.ID, nodeB.NodeToken)
 	if err != nil {
@@ -527,6 +530,9 @@ func TestSQLiteBootstrapIncludesObservedFailureBudget(t *testing.T) {
 	}
 	if bootstrap.Peers[0].ObservedConsecutiveDirectFailures != 3 || bootstrap.Peers[0].ObservedLastDirectAttemptResult != "timeout" {
 		t.Fatalf("expected observed failure budget summary in bootstrap peer, got %#v", bootstrap.Peers[0])
+	}
+	if !bootstrap.Peers[0].ObservedDirectRecoveryBlocked || bootstrap.Peers[0].ObservedDirectRecoveryBlockReason != "suppressed_timeout_budget" {
+		t.Fatalf("expected observed recovery block state in bootstrap peer, got %#v", bootstrap.Peers[0])
 	}
 }
 

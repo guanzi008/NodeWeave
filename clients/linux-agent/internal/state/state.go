@@ -111,6 +111,18 @@ func LoadTransportReport(path string) (secureudp.Report, error) {
 	return report, nil
 }
 
+func LoadRecoveryStates(path string) ([]api.PeerRecoveryState, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read recovery state file: %w", err)
+	}
+	var states []api.PeerRecoveryState
+	if err := json.Unmarshal(raw, &states); err != nil {
+		return nil, fmt.Errorf("parse recovery state file: %w", err)
+	}
+	return states, nil
+}
+
 func LoadSTUNReport(path string) (stun.Report, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -243,6 +255,23 @@ func SaveTransportReport(path string, report secureudp.Report) error {
 	}
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		return fmt.Errorf("write transport report file: %w", err)
+	}
+	return nil
+}
+
+func SaveRecoveryStates(path string, states []api.PeerRecoveryState) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create recovery state dir: %w", err)
+	}
+	raw, err := json.MarshalIndent(states, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal recovery state file: %w", err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return fmt.Errorf("write recovery state file: %w", err)
 	}
 	return nil
 }

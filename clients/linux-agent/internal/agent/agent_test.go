@@ -559,6 +559,12 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 				Status:    "online",
 			},
 			BootstrapVersion: 2,
+			PeerRecoveryStates: []api.PeerRecoveryState{{
+				PeerNodeID:   "node-b",
+				Blocked:      true,
+				BlockReason:  "suppressed_timeout_budget",
+				BlockedUntil: time.Now().UTC().Add(30 * time.Second),
+			}},
 		}); err != nil {
 			t.Fatalf("encode heartbeat response: %v", err)
 		}
@@ -567,9 +573,10 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 
 	svc := &Service{
 		cfg: config.Config{
-			ServerURL:      server.URL,
-			PrivateKeyPath: filepath.Join(tmpDir, "node.key"),
-			StatePath:      filepath.Join(tmpDir, "state.json"),
+			ServerURL:         server.URL,
+			PrivateKeyPath:    filepath.Join(tmpDir, "node.key"),
+			StatePath:         filepath.Join(tmpDir, "state.json"),
+			RecoveryStatePath: filepath.Join(tmpDir, "recovery.json"),
 		},
 		client: contractsclient.New(server.URL),
 		state: state.File{
@@ -598,6 +605,13 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	}
 	if received.PeerTransportStates[0].ConsecutiveDirectFailures != 0 {
 		t.Fatalf("expected direct success to reset failure budget, got %#v", received.PeerTransportStates)
+	}
+	recoveryStates, err := state.LoadRecoveryStates(filepath.Join(tmpDir, "recovery.json"))
+	if err != nil {
+		t.Fatalf("load recovery states: %v", err)
+	}
+	if len(recoveryStates) != 1 || !recoveryStates[0].Blocked || recoveryStates[0].PeerNodeID != "node-b" {
+		t.Fatalf("expected persisted recovery state from heartbeat response, got %#v", recoveryStates)
 	}
 
 	transportCancel()

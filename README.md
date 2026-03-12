@@ -107,6 +107,7 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - 控制面会基于双方最新 heartbeat、endpoint freshness 和 peer transport 摘要下发一次性 `direct_attempts`，并优先把当前 relay 活跃的链路标成 `relay_active`
 - 如果任一侧刚上报了 `timeout` / `relay_kept` 这类 direct attempt 失败结果，控制面会进入短暂冷却窗口，避免连续抖动重试
 - 这些窗口现在都可以通过控制面环境变量调节，包括在线判定、endpoint freshness、按失败类型区分的 cooldown、按失败类型区分的 `manual_recover` 升级阈值、按失败类型区分的失败预算与 suppression window、attempt window，以及 `relay_active` / `manual_recover` 各自独立的 lead/window/burst profile
+- controlplane 还会把每个 peer 当前的恢复 block 状态通过 `peer_recovery_states` 回给 agent，并在 bootstrap peer 摘要里暴露 block 原因和截止时间
 - `secure-udp` 在 direct 建链时会在一个握手窗口内跨多个 direct candidate 重复发送 `hello` burst，帮助 relay 活跃期间更主动地恢复直连
 - `linux-agent` 会消费控制面返回的 `direct_attempts`，到点调用显式 `ExecuteDirectAttempt(...)`，失败时保持现有 relay 活跃路径
 - `linux-agent` 会在后台对 direct candidate 主动发起 secure-udp 握手预热，并根据 transport report 暴露的 `next_direct_retry_at` 精准安排下一轮恢复尝试，减少等待真实流量才建链的延迟

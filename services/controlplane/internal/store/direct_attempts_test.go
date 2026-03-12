@@ -171,6 +171,30 @@ func TestDirectAttemptReasonSkipsSuppressionAfterRecentSuccess(t *testing.T) {
 	}
 }
 
+func TestRecoveryStateForPeerUsesLongestBlock(t *testing.T) {
+	now := time.Now().UTC()
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:           30 * time.Second,
+		DirectAttemptCooldown:              2 * time.Second,
+		DirectAttemptFailureSuppressAfter:  3,
+		DirectAttemptFailureSuppressWindow: 90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:  3,
+		DirectAttemptTimeoutSuppressWindow: 90 * time.Second,
+	}
+
+	recoveryState := recoveryStateForPeer("node-b", api.PeerTransportState{
+		PeerNodeID:                "node-b",
+		ActiveKind:                "relay",
+		ReportedAt:                now,
+		LastDirectAttemptAt:       now.Add(-3 * time.Second),
+		LastDirectAttemptResult:   "timeout",
+		ConsecutiveDirectFailures: 3,
+	}, api.PeerTransportState{}, now, policy)
+	if !recoveryState.Blocked || recoveryState.BlockReason != "suppressed_timeout_budget" {
+		t.Fatalf("expected suppression state to win over shorter cooldown, got %#v", recoveryState)
+	}
+}
+
 func TestDirectAttemptCoolingDownUsesResultSpecificCooldowns(t *testing.T) {
 	now := time.Now().UTC()
 	policy := directAttemptPolicy{

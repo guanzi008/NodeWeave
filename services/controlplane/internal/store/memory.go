@@ -194,9 +194,10 @@ func (s *MemoryStore) UpdateHeartbeat(nodeID, token string, req api.HeartbeatReq
 	s.scheduleDirectAttemptsLocked(now, node.ID)
 
 	response := api.HeartbeatResponse{
-		Node:             sanitizeNode(node),
-		BootstrapVersion: s.bootstrapVersion,
-		DirectAttempts:   s.directAttemptsForNodeLocked(node.ID, now),
+		Node:               sanitizeNode(node),
+		BootstrapVersion:   s.bootstrapVersion,
+		DirectAttempts:     s.directAttemptsForNodeLocked(node.ID, now),
+		PeerRecoveryStates: s.directAttemptRecoveryStatesForNodeLocked(node.ID, now),
 	}
 	return response, nil
 }
@@ -317,6 +318,8 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 	if !ok {
 		selfNode = api.Node{}
 	}
+	selfTransportStates := s.peerTransports[selfNodeID]
+	policy := directAttemptPolicyFromConfig(s.cfg)
 
 	routes := make([]api.Route, 0, len(s.routes))
 	for _, route := range s.routes {
@@ -343,6 +346,11 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 		if node.ID == selfNodeID {
 			continue
 		}
+		peerTransportState := api.PeerTransportState{}
+		if peerStates, ok := s.peerTransports[node.ID]; ok {
+			peerTransportState = peerStates[selfNodeID]
+		}
+		recoveryState := recoveryStateForPeer(node.ID, selfTransportStates[node.ID], peerTransportState, time.Now().UTC(), policy)
 		peer := api.Peer{
 			NodeID:          node.ID,
 			OverlayIP:       node.OverlayIP,
@@ -357,16 +365,19 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 		if report, ok := s.natReports[node.ID]; ok {
 			peer.NATMappingBehavior, peer.NATReachable, peer.NATReportedAt = natSummaryForPeer(report)
 		}
-		if peerStates, ok := s.peerTransports[node.ID]; ok {
-			if transportState, ok := peerStates[selfNodeID]; ok {
-				peer.ObservedTransportKind = transportState.ActiveKind
-				peer.ObservedTransportAddress = transportState.ActiveAddress
-				peer.ObservedTransportReportedAt = transportState.ReportedAt
-				peer.ObservedLastDirectAttemptAt = transportState.LastDirectAttemptAt
-				peer.ObservedLastDirectAttemptResult = transportState.LastDirectAttemptResult
-				peer.ObservedLastDirectSuccessAt = transportState.LastDirectSuccessAt
-				peer.ObservedConsecutiveDirectFailures = transportState.ConsecutiveDirectFailures
-			}
+		if !peerTransportState.ReportedAt.IsZero() {
+			peer.ObservedTransportKind = peerTransportState.ActiveKind
+			peer.ObservedTransportAddress = peerTransportState.ActiveAddress
+			peer.ObservedTransportReportedAt = peerTransportState.ReportedAt
+			peer.ObservedLastDirectAttemptAt = peerTransportState.LastDirectAttemptAt
+			peer.ObservedLastDirectAttemptResult = peerTransportState.LastDirectAttemptResult
+			peer.ObservedLastDirectSuccessAt = peerTransportState.LastDirectSuccessAt
+			peer.ObservedConsecutiveDirectFailures = peerTransportState.ConsecutiveDirectFailures
+		}
+		if recoveryState.Blocked {
+			peer.ObservedDirectRecoveryBlocked = recoveryState.Blocked
+			peer.ObservedDirectRecoveryBlockReason = recoveryState.BlockReason
+			peer.ObservedDirectRecoveryBlockedUntil = recoveryState.BlockedUntil
 		}
 		peers = append(peers, peer)
 	}
@@ -405,6 +416,30 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 		},
 		ExitNode: exitNode,
 	}
+}
+
+func (s *MemoryStore) directAttemptRecoveryStatesForNodeLocked(nodeID string, now time.Time) []api.PeerRecoveryState {
+	selfStates := s.peerTransports[nodeID]
+	policy := directAttemptPolicyFromConfig(s.cfg)
+	states := make([]api.PeerRecoveryState, 0, len(s.nodes))
+	for peerID := range s.nodes {
+		if peerID == nodeID {
+			continue
+		}
+		peerState := api.PeerTransportState{}
+		if reportedByPeer, ok := s.peerTransports[peerID]; ok {
+			peerState = reportedByPeer[nodeID]
+		}
+		recoveryState := recoveryStateForPeer(peerID, selfStates[peerID], peerState, now, policy)
+		if !recoveryState.Blocked {
+			continue
+		}
+		states = append(states, recoveryState)
+	}
+	sort.Slice(states, func(i, j int) bool {
+		return states[i].PeerNodeID < states[j].PeerNodeID
+	})
+	return states
 }
 
 func (s *MemoryStore) pruneDirectAttemptsLocked(now time.Time) {

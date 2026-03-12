@@ -123,6 +123,18 @@ func LoadRecoveryStates(path string) ([]api.PeerRecoveryState, error) {
 	return states, nil
 }
 
+func LoadDirectAttempts(path string) ([]api.DirectAttemptInstruction, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read direct attempt file: %w", err)
+	}
+	var attempts []api.DirectAttemptInstruction
+	if err := json.Unmarshal(raw, &attempts); err != nil {
+		return nil, fmt.Errorf("parse direct attempt file: %w", err)
+	}
+	return attempts, nil
+}
+
 func LoadSTUNReport(path string) (stun.Report, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -272,6 +284,23 @@ func SaveRecoveryStates(path string, states []api.PeerRecoveryState) error {
 	}
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		return fmt.Errorf("write recovery state file: %w", err)
+	}
+	return nil
+}
+
+func SaveDirectAttempts(path string, attempts []api.DirectAttemptInstruction) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create direct attempt dir: %w", err)
+	}
+	raw, err := json.MarshalIndent(attempts, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal direct attempt file: %w", err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return fmt.Errorf("write direct attempt file: %w", err)
 	}
 	return nil
 }

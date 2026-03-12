@@ -283,6 +283,35 @@ func TestSaveAndLoadRecoveryStates(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadDirectAttempts(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "direct-attempts.json")
+
+	want := []api.DirectAttemptInstruction{
+		{
+			AttemptID:     "attempt-1",
+			PeerNodeID:    "node_2",
+			ExecuteAt:     time.Now().UTC().Add(5 * time.Second),
+			Window:        600,
+			BurstInterval: 80,
+			Candidates:    []string{"203.0.113.10:51820"},
+			Reason:        "manual_recover",
+		},
+	}
+
+	if err := SaveDirectAttempts(path, want); err != nil {
+		t.Fatalf("save direct attempts: %v", err)
+	}
+
+	got, err := LoadDirectAttempts(path)
+	if err != nil {
+		t.Fatalf("load direct attempts: %v", err)
+	}
+	if len(got) != 1 || got[0].AttemptID != want[0].AttemptID || got[0].PeerNodeID != want[0].PeerNodeID {
+		t.Fatalf("unexpected direct attempt roundtrip: %#v", got)
+	}
+}
+
 func TestSaveAndLoadSTUNReport(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "stun-report.json")

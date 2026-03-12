@@ -45,6 +45,8 @@ func main() {
 		exitIfErr(runDataplaneStatus(os.Args[2:]))
 	case "transport-status":
 		exitIfErr(runTransportStatus(os.Args[2:]))
+	case "direct-attempt-status":
+		exitIfErr(runDirectAttemptStatus(os.Args[2:]))
 	case "recovery-status":
 		exitIfErr(runRecoveryStatus(os.Args[2:]))
 	case "stun-status":
@@ -283,6 +285,25 @@ func runTransportStatus(args []string) error {
 	return printJSON(report)
 }
 
+func runDirectAttemptStatus(args []string) error {
+	fs := flag.NewFlagSet("direct-attempt-status", flag.ContinueOnError)
+	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+
+	attempts, err := state.LoadDirectAttempts(cfg.DirectAttemptPath)
+	if err != nil {
+		return err
+	}
+	return printJSON(attempts)
+}
+
 func runRecoveryStatus(args []string) error {
 	fs := flag.NewFlagSet("recovery-status", flag.ContinueOnError)
 	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
@@ -322,7 +343,7 @@ func runSTUNStatus(args []string) error {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, "usage: linux-agent <init-config|enroll|run|status|runtime-status|plan-status|apply-status|session-status|session-report|dataplane-status|transport-status|recovery-status|stun-status> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: linux-agent <init-config|enroll|run|status|runtime-status|plan-status|apply-status|session-status|session-report|dataplane-status|transport-status|direct-attempt-status|recovery-status|stun-status> [flags]")
 }
 
 func exitIfErr(err error) {

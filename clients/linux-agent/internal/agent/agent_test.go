@@ -1466,11 +1466,13 @@ func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) 
 
 	svc := &Service{
 		cfg: config.Config{
+			DirectAttemptPath:   filepath.Join(tmpDir, "direct-attempts.json"),
 			TransportReportPath: filepath.Join(tmpDir, "transport-report.json"),
 		},
 		dataplaneRuntime: &activeDataplane{
 			secureUDP: transportA,
 		},
+		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
 		scheduledAttempts: map[string]context.CancelFunc{},
 	}
 
@@ -1496,6 +1498,123 @@ func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) 
 			t.Fatalf("timed out waiting for persisted direct attempt transport report")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	attempts, err := state.LoadDirectAttempts(filepath.Join(tmpDir, "direct-attempts.json"))
+	if err != nil {
+		t.Fatalf("load persisted direct attempts: %v", err)
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("expected completed direct attempt queue to be empty, got %#v", attempts)
+	}
+
+	cancel()
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatalf("transport serve: %v", err)
+		}
+	}
+}
+
+func TestScheduleDirectAttemptsPersistsWithoutTransportAndRestoresLater(t *testing.T) {
+	tmpDir := t.TempDir()
+	privateKeyA, publicKeyA, err := secureudp.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair A: %v", err)
+	}
+	privateKeyB, publicKeyB, err := secureudp.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair B: %v", err)
+	}
+
+	svc := &Service{
+		cfg: config.Config{
+			DirectAttemptPath:   filepath.Join(tmpDir, "direct-attempts.json"),
+			TransportReportPath: filepath.Join(tmpDir, "transport-report.json"),
+		},
+		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
+		scheduledAttempts: map[string]context.CancelFunc{},
+	}
+
+	transportB, err := secureudp.Listen(secureudp.Config{
+		NodeID:           "node-b",
+		ListenAddress:    "127.0.0.1:0",
+		PrivateKey:       privateKeyB,
+		HandshakeTimeout: 400 * time.Millisecond,
+		Peers: []session.Peer{
+			{NodeID: "node-a", PublicKey: publicKeyA, Candidates: []session.Candidate{{Kind: "direct", Address: "127.0.0.1:1", Priority: 1000}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("listen transport B: %v", err)
+	}
+	defer func() { _ = transportB.Close() }()
+
+	transportA, err := secureudp.Listen(secureudp.Config{
+		NodeID:           "node-a",
+		ListenAddress:    "127.0.0.1:0",
+		PrivateKey:       privateKeyA,
+		HandshakeTimeout: 400 * time.Millisecond,
+		Peers: []session.Peer{
+			{NodeID: "node-b", PublicKey: publicKeyB, Candidates: []session.Candidate{{Kind: "direct", Address: transportB.Address(), Priority: 1000}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("listen transport A: %v", err)
+	}
+	defer func() { _ = transportA.Close() }()
+
+	instruction := api.DirectAttemptInstruction{
+		AttemptID:     "attempt-agent-restore",
+		PeerNodeID:    "node-b",
+		ExecuteAt:     time.Now().UTC().Add(150 * time.Millisecond),
+		Window:        800,
+		BurstInterval: 50,
+		Candidates:    []string{transportB.Address()},
+		Reason:        "manual_recover",
+	}
+	svc.scheduleDirectAttempts([]api.DirectAttemptInstruction{instruction})
+
+	attempts, err := state.LoadDirectAttempts(svc.cfg.DirectAttemptPath)
+	if err != nil {
+		t.Fatalf("load persisted direct attempts without transport: %v", err)
+	}
+	if len(attempts) != 1 || attempts[0].AttemptID != instruction.AttemptID || len(attempts[0].Candidates) != 1 || attempts[0].Candidates[0] != transportB.Address() {
+		t.Fatalf("expected pending direct attempt to persist, got %#v", attempts)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- transportA.Serve(ctx, func(context.Context, dataplane.Frame, net.Addr) error { return nil })
+	}()
+	go func() {
+		errCh <- transportB.Serve(ctx, func(context.Context, dataplane.Frame, net.Addr) error { return nil })
+	}()
+
+	svc.dataplaneRuntime = &activeDataplane{
+		secureUDP: transportA,
+	}
+	svc.scheduleDirectAttempts(nil)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		report, err := state.LoadTransportReport(svc.cfg.TransportReportPath)
+		if err == nil && len(report.Peers) == 1 && report.Peers[0].LastDirectAttemptID == instruction.AttemptID && report.Peers[0].LastDirectAttemptResult == "success" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for restored direct attempt to complete")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	attempts, err = state.LoadDirectAttempts(svc.cfg.DirectAttemptPath)
+	if err != nil {
+		t.Fatalf("load persisted direct attempts after restore: %v", err)
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("expected restored direct attempt queue to be empty, got %#v", attempts)
 	}
 
 	cancel()

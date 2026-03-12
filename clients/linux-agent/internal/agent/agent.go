@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ type Service struct {
 	dataplaneMu       sync.Mutex
 	dataplaneRuntime  *activeDataplane
 	attemptMu         sync.Mutex
+	pendingAttempts   map[string]api.DirectAttemptInstruction
 	scheduledAttempts map[string]context.CancelFunc
 	recoveryMu        sync.RWMutex
 	recoveryStates    map[string]api.PeerRecoveryState
@@ -78,6 +80,7 @@ func New(cfg config.Config) (*Service, error) {
 		cfg:               cfg,
 		client:            contractsclient.New(cfg.ServerURL),
 		runtimeDriver:     newRuntimeDriver(cfg),
+		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
 		scheduledAttempts: map[string]context.CancelFunc{},
 		recoveryStates:    map[string]api.PeerRecoveryState{},
 		warmupWakeCh:      make(chan struct{}, 1),
@@ -88,6 +91,20 @@ func New(cfg config.Config) (*Service, error) {
 	}
 	if recoveryStates, err := state.LoadRecoveryStates(cfg.RecoveryStatePath); err == nil {
 		svc.setRecoveryStates(recoveryStates)
+	}
+	if attempts, err := state.LoadDirectAttempts(cfg.DirectAttemptPath); err == nil {
+		now := time.Now().UTC()
+		svc.attemptMu.Lock()
+		changed := svc.queueDirectAttemptsLocked(attempts, now)
+		if svc.pruneExpiredPendingDirectAttemptsLocked(now) {
+			changed = true
+		}
+		if changed {
+			if err := svc.persistPendingDirectAttemptsLocked(); err != nil {
+				log.Printf("persist normalized direct attempts: %v", err)
+			}
+		}
+		svc.attemptMu.Unlock()
 	}
 	return svc, nil
 }
@@ -467,7 +484,14 @@ func (s *Service) startDataplane(ctx context.Context) (io.Closer, error) {
 	if config == nil {
 		return nil, nil
 	}
-	return s.startDataplaneWithConfig(ctx, *config)
+	closer, err := s.startDataplaneWithConfig(ctx, *config)
+	if err != nil {
+		return nil, err
+	}
+	if config.mode == "secure-udp" {
+		s.scheduleDirectAttempts(nil)
+	}
+	return closer, nil
 }
 
 func (s *Service) reloadDataplane(ctx context.Context) error {
@@ -477,15 +501,15 @@ func (s *Service) reloadDataplane(ctx context.Context) error {
 	}
 	if config == nil {
 		s.dataplaneMu.Lock()
-		defer s.dataplaneMu.Unlock()
 		s.stopDataplaneLocked()
+		s.dataplaneMu.Unlock()
 		return s.clearTransportReport()
 	}
 
+	rescheduleDirectAttempts := false
 	s.dataplaneMu.Lock()
-	defer s.dataplaneMu.Unlock()
-
 	if s.dataplaneRuntime != nil && s.dataplaneRuntime.signature == config.signature {
+		s.dataplaneMu.Unlock()
 		if config.mode != "secure-udp" {
 			return s.clearTransportReport()
 		}
@@ -495,10 +519,16 @@ func (s *Service) reloadDataplane(ctx context.Context) error {
 	s.stopDataplaneLocked()
 
 	if _, err := s.startDataplaneWithConfig(ctx, *config); err != nil {
+		s.dataplaneMu.Unlock()
 		return err
 	}
+	rescheduleDirectAttempts = config.mode == "secure-udp"
+	s.dataplaneMu.Unlock()
 	if config.mode != "secure-udp" {
 		return s.clearTransportReport()
+	}
+	if rescheduleDirectAttempts {
+		s.scheduleDirectAttempts(nil)
 	}
 	return nil
 }
@@ -838,23 +868,138 @@ func (s *Service) sharedSTUNTransport() *secureudp.Transport {
 	return s.dataplaneRuntime.secureUDP
 }
 
+func directAttemptWindow(instruction api.DirectAttemptInstruction) time.Duration {
+	window := time.Duration(instruction.Window) * time.Millisecond
+	if window <= 0 {
+		return 600 * time.Millisecond
+	}
+	return window
+}
+
+func normalizeDirectAttempt(instruction api.DirectAttemptInstruction) (api.DirectAttemptInstruction, bool) {
+	instruction.AttemptID = strings.TrimSpace(instruction.AttemptID)
+	instruction.PeerNodeID = strings.TrimSpace(instruction.PeerNodeID)
+	instruction.Reason = strings.TrimSpace(instruction.Reason)
+	instruction.Candidates = normalizedStrings(instruction.Candidates)
+	if instruction.AttemptID == "" || instruction.PeerNodeID == "" {
+		return api.DirectAttemptInstruction{}, false
+	}
+	if !instruction.ExecuteAt.IsZero() {
+		instruction.ExecuteAt = instruction.ExecuteAt.UTC()
+	}
+	return instruction, true
+}
+
+func directAttemptExpired(instruction api.DirectAttemptInstruction, now time.Time) bool {
+	if instruction.ExecuteAt.IsZero() {
+		return false
+	}
+	return now.After(instruction.ExecuteAt.Add(directAttemptWindow(instruction)))
+}
+
+func (s *Service) queueDirectAttemptsLocked(attempts []api.DirectAttemptInstruction, now time.Time) bool {
+	if s.pendingAttempts == nil {
+		s.pendingAttempts = make(map[string]api.DirectAttemptInstruction)
+	}
+	changed := false
+	for _, instruction := range attempts {
+		instruction, ok := normalizeDirectAttempt(instruction)
+		if !ok || directAttemptExpired(instruction, now) {
+			continue
+		}
+		s.pendingAttempts[instruction.AttemptID] = instruction
+		changed = true
+	}
+	return changed
+}
+
+func (s *Service) pruneExpiredPendingDirectAttemptsLocked(now time.Time) bool {
+	if len(s.pendingAttempts) == 0 {
+		return false
+	}
+	changed := false
+	for attemptID, instruction := range s.pendingAttempts {
+		if !directAttemptExpired(instruction, now) {
+			continue
+		}
+		delete(s.pendingAttempts, attemptID)
+		changed = true
+	}
+	return changed
+}
+
+func (s *Service) persistPendingDirectAttemptsLocked() error {
+	attempts := make([]api.DirectAttemptInstruction, 0, len(s.pendingAttempts))
+	for _, instruction := range s.pendingAttempts {
+		attempts = append(attempts, instruction)
+	}
+	sort.Slice(attempts, func(i, j int) bool {
+		if attempts[i].ExecuteAt.Equal(attempts[j].ExecuteAt) {
+			if attempts[i].PeerNodeID == attempts[j].PeerNodeID {
+				return attempts[i].AttemptID < attempts[j].AttemptID
+			}
+			return attempts[i].PeerNodeID < attempts[j].PeerNodeID
+		}
+		if attempts[i].ExecuteAt.IsZero() {
+			return true
+		}
+		if attempts[j].ExecuteAt.IsZero() {
+			return false
+		}
+		return attempts[i].ExecuteAt.Before(attempts[j].ExecuteAt)
+	})
+	return state.SaveDirectAttempts(s.cfg.DirectAttemptPath, attempts)
+}
+
+func (s *Service) finalizePendingDirectAttempt(attemptID string, remove bool, now time.Time) {
+	attemptID = strings.TrimSpace(attemptID)
+	if attemptID == "" {
+		return
+	}
+	s.attemptMu.Lock()
+	changed := false
+	if remove {
+		if _, ok := s.pendingAttempts[attemptID]; ok {
+			delete(s.pendingAttempts, attemptID)
+			changed = true
+		}
+	} else if s.pruneExpiredPendingDirectAttemptsLocked(now) {
+		changed = true
+	}
+	if changed {
+		if err := s.persistPendingDirectAttemptsLocked(); err != nil {
+			log.Printf("persist direct attempts failed: %v", err)
+		}
+	}
+	s.attemptMu.Unlock()
+}
+
 func (s *Service) scheduleDirectAttempts(attempts []api.DirectAttemptInstruction) {
+	now := time.Now().UTC()
+	s.attemptMu.Lock()
+	changed := s.queueDirectAttemptsLocked(attempts, now)
+	if s.pruneExpiredPendingDirectAttemptsLocked(now) {
+		changed = true
+	}
+	if changed {
+		if err := s.persistPendingDirectAttemptsLocked(); err != nil {
+			log.Printf("persist direct attempts failed: %v", err)
+		}
+	}
+	pending := make([]api.DirectAttemptInstruction, 0, len(s.pendingAttempts))
+	for _, instruction := range s.pendingAttempts {
+		pending = append(pending, instruction)
+	}
+	s.attemptMu.Unlock()
+
 	transport := s.sharedSTUNTransport()
-	if transport == nil || len(attempts) == 0 {
+	if transport == nil {
 		return
 	}
 
-	now := time.Now().UTC()
-	for _, instruction := range attempts {
+	for _, instruction := range pending {
 		attemptID := strings.TrimSpace(instruction.AttemptID)
 		if attemptID == "" {
-			continue
-		}
-		window := time.Duration(instruction.Window) * time.Millisecond
-		if window <= 0 {
-			window = 600 * time.Millisecond
-		}
-		if !instruction.ExecuteAt.IsZero() && now.After(instruction.ExecuteAt.Add(window)) {
 			continue
 		}
 
@@ -886,7 +1031,13 @@ func (s *Service) scheduleDirectAttempts(attempts []api.DirectAttemptInstruction
 			if saveErr := s.saveTransportReport(transport.Snapshot()); saveErr != nil {
 				log.Printf("transport report save failed after direct attempt=%s peer=%s: %v", instruction.AttemptID, instruction.PeerNodeID, saveErr)
 			}
-			if err != nil && !errors.Is(err, context.Canceled) {
+			now := time.Now().UTC()
+			if errors.Is(err, context.Canceled) {
+				s.finalizePendingDirectAttempt(instruction.AttemptID, false, now)
+				return
+			}
+			s.finalizePendingDirectAttempt(instruction.AttemptID, true, now)
+			if err != nil {
 				log.Printf(
 					"direct attempt failed peer=%s attempt_id=%s execute_at=%s result=%s active=%s err=%v",
 					instruction.PeerNodeID,

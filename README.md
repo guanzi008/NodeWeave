@@ -118,6 +118,7 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - `linux-agent` 会把未执行完的 `direct_attempts` 持久化到本地；dataplane 未就绪或 agent 重启后，只要 attempt 还没过期，就会在 secure-udp transport 恢复时继续调度
 - `linux-agent direct-attempt-status` 可直接查看这些仍在本地排队的 coordinated direct attempts
 - `linux-agent direct-attempt-report` 会保留最近一批 attempt 的生命周期、controlplane `issued_at` 和等待原因，便于判断它是卡在 transport 不可用、正常排程、执行中，还是已经 timeout / relay_kept / success / expired
+- 如果 controlplane 最新 `peer_recovery_states` 已经表明某个旧 attempt 被 block、被新 attempt 替代，或者链路已经恢复 direct，agent 会主动取消并移除这类 stale attempt，并在 report 里写出取消原因
 - controlplane 返回的 `peer_recovery_states` 和 bootstrap peer 摘要现在也会暴露最近一次放行的 direct attempt ID / reason / `issued_at` / `execute_at`
 - 即使这次没有下发新的 direct attempt，controlplane 也会在 `peer_recovery_states[*].decision_status / decision_reason / decision_at / decision_next_at` 以及 bootstrap peer 摘要里明确说明当前为什么被 block、为什么保持 direct、为什么因 peer offline / 缺少 fresh direct candidate 而没调度，以及最早何时会重新评估
 - `linux-agent` 后台 `direct_warmup_interval` 预热现在也会遵守 controlplane 返回的 `peer_recovery_states`，在 `next_probe_at` / `probe_refill_at` 之前暂停本地 warmup

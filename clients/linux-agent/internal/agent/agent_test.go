@@ -1669,6 +1669,136 @@ func TestScheduleDirectAttemptsPersistsWithoutTransportAndRestoresLater(t *testi
 	}
 }
 
+func TestScheduleDirectAttemptsReplacesOlderAttemptForSamePeer(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	svc := &Service{
+		cfg: config.Config{
+			DirectAttemptPath:       filepath.Join(tmpDir, "direct-attempts.json"),
+			DirectAttemptReportPath: filepath.Join(tmpDir, "direct-attempt-report.json"),
+		},
+		attemptReports:    map[string]state.DirectAttemptReportEntry{},
+		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
+		scheduledAttempts: map[string]context.CancelFunc{},
+	}
+
+	first := api.DirectAttemptInstruction{
+		AttemptID:     "attempt-old",
+		PeerNodeID:    "node-b",
+		IssuedAt:      time.Now().UTC().Add(-100 * time.Millisecond),
+		ExecuteAt:     time.Now().UTC().Add(2 * time.Second),
+		Window:        500,
+		BurstInterval: 50,
+		Candidates:    []string{"203.0.113.10:51820"},
+		Reason:        "relay_active",
+	}
+	second := api.DirectAttemptInstruction{
+		AttemptID:     "attempt-new",
+		PeerNodeID:    "node-b",
+		IssuedAt:      time.Now().UTC(),
+		ExecuteAt:     time.Now().UTC().Add(3 * time.Second),
+		Window:        500,
+		BurstInterval: 50,
+		Candidates:    []string{"203.0.113.11:51820"},
+		Reason:        "manual_recover",
+	}
+
+	svc.scheduleDirectAttempts([]api.DirectAttemptInstruction{first})
+	svc.scheduleDirectAttempts([]api.DirectAttemptInstruction{second})
+
+	attempts, err := state.LoadDirectAttempts(svc.cfg.DirectAttemptPath)
+	if err != nil {
+		t.Fatalf("load persisted direct attempts after replacement: %v", err)
+	}
+	if len(attempts) != 1 || attempts[0].AttemptID != second.AttemptID {
+		t.Fatalf("expected only latest direct attempt to remain queued, got %#v", attempts)
+	}
+
+	report, err := state.LoadDirectAttemptReport(svc.cfg.DirectAttemptReportPath)
+	if err != nil {
+		t.Fatalf("load direct attempt report after replacement: %v", err)
+	}
+	if len(report.Entries) != 2 {
+		t.Fatalf("expected report to retain both old and new attempts, got %#v", report)
+	}
+	seenCancelled := false
+	seenQueued := false
+	for _, entry := range report.Entries {
+		switch entry.AttemptID {
+		case first.AttemptID:
+			if entry.Status != "cancelled" || entry.Result != "cancelled" || entry.WaitReason != "superseded_by_new_attempt" {
+				t.Fatalf("expected old attempt to be cancelled as superseded, got %#v", entry)
+			}
+			seenCancelled = true
+		case second.AttemptID:
+			if entry.Status != "waiting_transport" || entry.Result != "queued" {
+				t.Fatalf("expected new attempt to remain queued waiting for transport, got %#v", entry)
+			}
+			seenQueued = true
+		}
+	}
+	if !seenCancelled || !seenQueued {
+		t.Fatalf("expected report to include superseded and queued entries, got %#v", report)
+	}
+}
+
+func TestSetRecoveryStatesCancelsSupersededPendingAttempt(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	svc := &Service{
+		cfg: config.Config{
+			DirectAttemptPath:       filepath.Join(tmpDir, "direct-attempts.json"),
+			DirectAttemptReportPath: filepath.Join(tmpDir, "direct-attempt-report.json"),
+		},
+		attemptReports:    map[string]state.DirectAttemptReportEntry{},
+		pendingAttempts:   map[string]api.DirectAttemptInstruction{},
+		scheduledAttempts: map[string]context.CancelFunc{},
+		recoveryStates:    map[string]api.PeerRecoveryState{},
+	}
+
+	instruction := api.DirectAttemptInstruction{
+		AttemptID:     "attempt-stale",
+		PeerNodeID:    "node-b",
+		IssuedAt:      time.Now().UTC().Add(-200 * time.Millisecond),
+		ExecuteAt:     time.Now().UTC().Add(1500 * time.Millisecond),
+		Window:        600,
+		BurstInterval: 50,
+		Candidates:    []string{"203.0.113.10:51820"},
+		Reason:        "relay_active",
+	}
+
+	svc.scheduleDirectAttempts([]api.DirectAttemptInstruction{instruction})
+	svc.setRecoveryStates([]api.PeerRecoveryState{{
+		PeerNodeID:     "node-b",
+		DecisionStatus: "blocked",
+		DecisionReason: "suppressed_timeout_budget",
+		DecisionAt:     time.Now().UTC(),
+		DecisionNextAt: time.Now().UTC().Add(30 * time.Second),
+		Blocked:        true,
+		BlockReason:    "suppressed_timeout_budget",
+		BlockedUntil:   time.Now().UTC().Add(30 * time.Second),
+	}})
+
+	attempts, err := state.LoadDirectAttempts(svc.cfg.DirectAttemptPath)
+	if err != nil {
+		t.Fatalf("load persisted direct attempts after recovery reconcile: %v", err)
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("expected stale direct attempt to be removed after recovery reconcile, got %#v", attempts)
+	}
+
+	report, err := state.LoadDirectAttemptReport(svc.cfg.DirectAttemptReportPath)
+	if err != nil {
+		t.Fatalf("load direct attempt report after recovery reconcile: %v", err)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].AttemptID != instruction.AttemptID {
+		t.Fatalf("expected one cancelled report entry, got %#v", report)
+	}
+	if report.Entries[0].Status != "cancelled" || report.Entries[0].Result != "cancelled" || report.Entries[0].WaitReason != "controlplane_blocked" {
+		t.Fatalf("expected stale direct attempt to be cancelled by recovery state, got %#v", report.Entries[0])
+	}
+}
+
 func TestScheduleDirectAttemptsMarksExpiredAttemptsInReport(t *testing.T) {
 	tmpDir := t.TempDir()
 

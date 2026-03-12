@@ -325,6 +325,17 @@ func (s *Service) setRecoveryStates(states []api.PeerRecoveryState) {
 	s.recoveryMu.Lock()
 	s.recoveryStates = index
 	s.recoveryMu.Unlock()
+	now := time.Now().UTC()
+	s.attemptMu.Lock()
+	if s.reconcilePendingDirectAttemptsLocked(now) {
+		if err := s.persistPendingDirectAttemptsLocked(); err != nil {
+			log.Printf("persist direct attempts failed: %v", err)
+		}
+		if err := s.persistDirectAttemptReportLocked(); err != nil {
+			log.Printf("persist direct attempt report failed: %v", err)
+		}
+	}
+	s.attemptMu.Unlock()
 	s.signalWarmupRecheck()
 }
 
@@ -345,14 +356,19 @@ func (s *Service) signalWarmupRecheck() {
 	}
 }
 
-func (s *Service) warmupBlockedUntil(peerNodeID string, now time.Time) (time.Time, bool) {
+func (s *Service) recoveryStateForPeer(peerNodeID string) (api.PeerRecoveryState, bool) {
 	peerNodeID = strings.TrimSpace(peerNodeID)
 	if peerNodeID == "" {
-		return time.Time{}, false
+		return api.PeerRecoveryState{}, false
 	}
 	s.recoveryMu.RLock()
 	recoveryState, ok := s.recoveryStates[peerNodeID]
 	s.recoveryMu.RUnlock()
+	return recoveryState, ok
+}
+
+func (s *Service) warmupBlockedUntil(peerNodeID string, now time.Time) (time.Time, bool) {
+	recoveryState, ok := s.recoveryStateForPeer(peerNodeID)
 	if !ok || !recoveryState.Blocked {
 		return time.Time{}, false
 	}
@@ -924,7 +940,7 @@ func directAttemptExpired(instruction api.DirectAttemptInstruction, now time.Tim
 
 func isTerminalDirectAttemptStatus(status string) bool {
 	switch strings.TrimSpace(status) {
-	case "completed", "expired":
+	case "completed", "expired", "cancelled":
 		return true
 	default:
 		return false
@@ -1051,6 +1067,18 @@ func (s *Service) markCanceledDirectAttemptReportLocked(instruction api.DirectAt
 	s.attemptReports[entry.AttemptID] = entry
 }
 
+func (s *Service) markRemovedDirectAttemptReportLocked(instruction api.DirectAttemptInstruction, now time.Time, waitReason string) {
+	s.touchDirectAttemptReportLocked(instruction, now)
+	entry := s.attemptReports[strings.TrimSpace(instruction.AttemptID)]
+	entry.Status = "cancelled"
+	entry.Result = "cancelled"
+	entry.WaitReason = strings.TrimSpace(waitReason)
+	entry.LastError = ""
+	entry.CompletedAt = now
+	entry.LastUpdatedAt = now
+	s.attemptReports[entry.AttemptID] = entry
+}
+
 func (s *Service) markExpiredDirectAttemptReportLocked(instruction api.DirectAttemptInstruction, now time.Time) {
 	s.touchDirectAttemptReportLocked(instruction, now)
 	entry := s.attemptReports[strings.TrimSpace(instruction.AttemptID)]
@@ -1071,6 +1099,54 @@ func (s *Service) syncPendingDirectAttemptReportsLocked(transportReady bool, now
 		}
 		s.setDirectAttemptWaitingLocked(instruction, now, "transport_unavailable")
 	}
+}
+
+func shouldRetainDirectAttempt(instruction api.DirectAttemptInstruction, recoveryState api.PeerRecoveryState) (bool, string) {
+	attemptID := strings.TrimSpace(instruction.AttemptID)
+	if attemptID == "" {
+		return false, "invalid_attempt_id"
+	}
+	switch strings.TrimSpace(recoveryState.DecisionStatus) {
+	case "":
+		return true, ""
+	case "attempt_issued":
+		if strings.TrimSpace(recoveryState.LastIssuedAttemptID) == attemptID {
+			return true, ""
+		}
+		return false, "superseded_by_new_attempt"
+	case "blocked":
+		return false, "controlplane_blocked"
+	case "direct_active":
+		return false, "direct_already_active"
+	case "local_offline", "peer_offline", "local_no_direct_candidate", "peer_no_direct_candidate":
+		return false, strings.TrimSpace(recoveryState.DecisionStatus)
+	default:
+		return false, "superseded_by_recovery_state"
+	}
+}
+
+func (s *Service) reconcilePendingDirectAttemptsLocked(now time.Time) bool {
+	if len(s.pendingAttempts) == 0 {
+		return false
+	}
+	changed := false
+	for attemptID, instruction := range s.pendingAttempts {
+		recoveryState, ok := s.recoveryStateForPeer(strings.TrimSpace(instruction.PeerNodeID))
+		if !ok {
+			continue
+		}
+		keep, waitReason := shouldRetainDirectAttempt(instruction, recoveryState)
+		if keep {
+			continue
+		}
+		if cancel, ok := s.scheduledAttempts[attemptID]; ok {
+			cancel()
+		}
+		delete(s.pendingAttempts, attemptID)
+		s.markRemovedDirectAttemptReportLocked(instruction, now, waitReason)
+		changed = true
+	}
+	return changed
 }
 
 func (s *Service) trimDirectAttemptReportsLocked() {
@@ -1129,6 +1205,17 @@ func (s *Service) queueDirectAttemptsLocked(attempts []api.DirectAttemptInstruct
 			s.markExpiredDirectAttemptReportLocked(instruction, now)
 			changed = true
 			continue
+		}
+		for existingID, existing := range s.pendingAttempts {
+			if existingID == instruction.AttemptID || strings.TrimSpace(existing.PeerNodeID) != strings.TrimSpace(instruction.PeerNodeID) {
+				continue
+			}
+			if cancel, ok := s.scheduledAttempts[existingID]; ok {
+				cancel()
+			}
+			delete(s.pendingAttempts, existingID)
+			s.markRemovedDirectAttemptReportLocked(existing, now, "superseded_by_new_attempt")
+			changed = true
 		}
 		s.pendingAttempts[instruction.AttemptID] = instruction
 		s.touchDirectAttemptReportLocked(instruction, now)
@@ -1209,6 +1296,9 @@ func (s *Service) scheduleDirectAttempts(attempts []api.DirectAttemptInstruction
 	now := time.Now().UTC()
 	s.attemptMu.Lock()
 	changed := s.queueDirectAttemptsLocked(attempts, now)
+	if s.reconcilePendingDirectAttemptsLocked(now) {
+		changed = true
+	}
 	expired := s.pruneExpiredPendingDirectAttemptsLocked(now)
 	for _, instruction := range expired {
 		s.markExpiredDirectAttemptReportLocked(instruction, now)

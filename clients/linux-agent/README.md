@@ -88,7 +88,7 @@ go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.js
 - `direct-attempt-status` 可直接查看当前还在本地排队、等待执行或等待 transport 恢复的 coordinated direct attempts
 - `direct-attempt-report` 会保留最近一段 attempt 生命周期，包括 `queued`、`waiting_transport`、`scheduled`、`executing`、`completed`、`expired`，以及 controlplane `issued_at`、等待原因、最后错误和命中的地址
 - `recovery-status` 现在除了 block 原因、`next_probe_at` 和 probe 配额，还会带最近一次 controlplane 放行的 direct attempt ID / reason / `issued_at` / `execute_at`
-- 即使 controlplane 这轮没有下发新的 `direct_attempt`，`recovery-status` 也会显示 `decision_status / decision_reason / decision_at`，用于解释为什么当前没有被调度恢复
+- 即使 controlplane 这轮没有下发新的 `direct_attempt`，`recovery-status` 也会显示 `decision_status / decision_reason / decision_at / decision_next_at`，用于解释为什么当前没有被调度恢复，以及最早何时会重新评估
 - 如果最近一次 direct attempt 结果已经上报为 `timeout` 或 `relay_kept`，控制面会进入短暂冷却窗口，避免 agent 被连续打洞指令刷屏；这两个结果现在可以配置不同的 cooldown
 - 冷却结束后如果 relay 仍持续活跃，控制面下发的后续恢复指令会标记为 `manual_recover`，并可使用比普通 `fresh_endpoints` 更激进的独立时间窗；`timeout` 和 `relay_kept` 也可以配置不同的升级阈值
 - heartbeat 上报的 peer transport 摘要现在还会带最近一次 direct success 时间和连续失败次数，控制面可以据此在失败预算耗尽后临时抑制恢复

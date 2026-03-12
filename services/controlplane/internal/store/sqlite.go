@@ -817,6 +817,7 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 			peer.ObservedDirectRecoveryDecisionStatus = recoveryState.DecisionStatus
 			peer.ObservedDirectRecoveryDecisionReason = recoveryState.DecisionReason
 			peer.ObservedDirectRecoveryDecisionAt = recoveryState.DecisionAt
+			peer.ObservedDirectRecoveryDecisionNextAt = recoveryState.DecisionNextAt
 		}
 		peers = append(peers, peer)
 	}

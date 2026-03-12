@@ -238,6 +238,9 @@ components:
         decision_at:
           type: string
           format: date-time
+        decision_next_at:
+          type: string
+          format: date-time
     DirectAttemptInstruction:
       type: object
       properties:
@@ -352,6 +355,9 @@ components:
         observed_direct_recovery_decision_reason:
           type: string
         observed_direct_recovery_decision_at:
+          type: string
+          format: date-time
+        observed_direct_recovery_decision_next_at:
           type: string
           format: date-time
     HeartbeatRequest:

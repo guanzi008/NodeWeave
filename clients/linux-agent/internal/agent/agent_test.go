@@ -577,6 +577,7 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 				DecisionStatus:             "blocked",
 				DecisionReason:             "suppressed_timeout_budget",
 				DecisionAt:                 time.Now().UTC(),
+				DecisionNextAt:             time.Now().UTC().Add(10 * time.Second),
 			}},
 		}); err != nil {
 			t.Fatalf("encode heartbeat response: %v", err)
@@ -638,7 +639,7 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	if recoveryStates[0].LastIssuedAttemptID == "" || recoveryStates[0].LastIssuedAttemptReason == "" || recoveryStates[0].LastIssuedAttemptAt.IsZero() || recoveryStates[0].LastIssuedAttemptExecuteAt.IsZero() {
 		t.Fatalf("expected persisted recovery state to include latest issued attempt trace, got %#v", recoveryStates)
 	}
-	if recoveryStates[0].DecisionStatus != "blocked" || recoveryStates[0].DecisionReason != "suppressed_timeout_budget" || recoveryStates[0].DecisionAt.IsZero() {
+	if recoveryStates[0].DecisionStatus != "blocked" || recoveryStates[0].DecisionReason != "suppressed_timeout_budget" || recoveryStates[0].DecisionAt.IsZero() || recoveryStates[0].DecisionNextAt.IsZero() {
 		t.Fatalf("expected persisted recovery state to include decision metadata, got %#v", recoveryStates)
 	}
 

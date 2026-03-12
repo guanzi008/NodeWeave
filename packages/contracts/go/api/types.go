@@ -95,6 +95,7 @@ type PeerRecoveryState struct {
 	DecisionStatus             string    `json:"decision_status,omitempty"`
 	DecisionReason             string    `json:"decision_reason,omitempty"`
 	DecisionAt                 time.Time `json:"decision_at,omitempty"`
+	DecisionNextAt             time.Time `json:"decision_next_at,omitempty"`
 }
 
 type Route struct {
@@ -151,6 +152,7 @@ type Peer struct {
 	ObservedDirectRecoveryDecisionStatus             string                `json:"observed_direct_recovery_decision_status,omitempty"`
 	ObservedDirectRecoveryDecisionReason             string                `json:"observed_direct_recovery_decision_reason,omitempty"`
 	ObservedDirectRecoveryDecisionAt                 time.Time             `json:"observed_direct_recovery_decision_at,omitempty"`
+	ObservedDirectRecoveryDecisionNextAt             time.Time             `json:"observed_direct_recovery_decision_next_at,omitempty"`
 }
 
 type RelayNode struct {

@@ -270,6 +270,7 @@ func TestSaveAndLoadRecoveryStates(t *testing.T) {
 			DecisionStatus: "blocked",
 			DecisionReason: "suppressed_timeout_budget",
 			DecisionAt:     time.Now().UTC(),
+			DecisionNextAt: time.Now().UTC().Add(15 * time.Second),
 		},
 	}
 
@@ -284,7 +285,7 @@ func TestSaveAndLoadRecoveryStates(t *testing.T) {
 	if len(got) != 1 || got[0].PeerNodeID != want[0].PeerNodeID || !got[0].Blocked {
 		t.Fatalf("unexpected recovery state roundtrip: %#v", got)
 	}
-	if got[0].DecisionStatus != want[0].DecisionStatus || got[0].DecisionReason != want[0].DecisionReason || got[0].DecisionAt.IsZero() {
+	if got[0].DecisionStatus != want[0].DecisionStatus || got[0].DecisionReason != want[0].DecisionReason || got[0].DecisionAt.IsZero() || got[0].DecisionNextAt.IsZero() {
 		t.Fatalf("expected decision metadata roundtrip, got %#v", got)
 	}
 }

@@ -222,6 +222,9 @@ func TestHeartbeatRoundTripsNATReportAndDirectAttempts(t *testing.T) {
 	if bootstrap.Peers[0].ObservedDirectRecoveryDecisionStatus == "" || bootstrap.Peers[0].ObservedDirectRecoveryDecisionReason == "" || bootstrap.Peers[0].ObservedDirectRecoveryDecisionAt.IsZero() {
 		t.Fatalf("expected bootstrap peer to expose recovery decision metadata, got %#v", bootstrap.Peers[0])
 	}
+	if bootstrap.Peers[0].ObservedDirectRecoveryDecisionNextAt.IsZero() {
+		t.Fatalf("expected bootstrap peer to expose next recovery decision time, got %#v", bootstrap.Peers[0])
+	}
 }
 
 func TestRouteOverlapConflict(t *testing.T) {

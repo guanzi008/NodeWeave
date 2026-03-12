@@ -290,6 +290,9 @@ func TestRecoveryStateForPeerUsesLongestBlock(t *testing.T) {
 	if !recoveryState.Blocked || recoveryState.BlockReason != "suppressed_timeout_budget" {
 		t.Fatalf("expected suppression state to win over shorter cooldown, got %#v", recoveryState)
 	}
+	if recoveryState.DecisionStatus != "blocked" || recoveryState.DecisionNextAt.IsZero() || !recoveryState.DecisionNextAt.Equal(recoveryState.BlockedUntil) {
+		t.Fatalf("expected blocked decision to expose next transition time, got %#v", recoveryState)
+	}
 }
 
 func TestRecoveryStateForPeerIncludesNextProbeAt(t *testing.T) {
@@ -384,6 +387,7 @@ func TestRecoveryStateForPeerIncludesLatestIssuedAttemptTrace(t *testing.T) {
 			Reason:    "relay_active",
 			IssuedAt:  now.Add(-1 * time.Second),
 			ExecuteAt: now.Add(200 * time.Millisecond),
+			ExpiresAt: now.Add(2 * time.Second),
 		},
 	)
 	if recoveryState.LastIssuedAttemptID != "attempt-node-a-node-b-1" || recoveryState.LastIssuedAttemptReason != "relay_active" {
@@ -391,6 +395,9 @@ func TestRecoveryStateForPeerIncludesLatestIssuedAttemptTrace(t *testing.T) {
 	}
 	if recoveryState.LastIssuedAttemptAt.IsZero() || recoveryState.LastIssuedAttemptExecuteAt.IsZero() {
 		t.Fatalf("expected recovery state to include issued/execute timestamps, got %#v", recoveryState)
+	}
+	if recoveryState.DecisionStatus != "attempt_issued" || recoveryState.DecisionNextAt.IsZero() || !recoveryState.DecisionNextAt.Equal(recoveryState.LastIssuedAttemptExecuteAt) {
+		t.Fatalf("expected issued attempt decision to point at execute_at, got %#v", recoveryState)
 	}
 }
 

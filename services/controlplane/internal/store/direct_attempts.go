@@ -253,6 +253,7 @@ type directAttemptDecision struct {
 	Status string
 	Reason string
 	At     time.Time
+	NextAt time.Time
 }
 
 func pairKey(left, right string) string {
@@ -768,23 +769,47 @@ func applyDirectAttemptTrace(recoveryState api.PeerRecoveryState, attempt direct
 	return recoveryState
 }
 
+func directAttemptDecisionNextAt(selfState, peerState api.PeerTransportState, now time.Time, block directAttemptBlockState, latestAttempt *directAttemptPair) time.Time {
+	if latestAttempt != nil && !now.After(latestAttempt.ExpiresAt) {
+		if latestAttempt.ExecuteAt.After(now) {
+			return latestAttempt.ExecuteAt
+		}
+		if latestAttempt.ExpiresAt.After(now) {
+			return latestAttempt.ExpiresAt
+		}
+		return time.Time{}
+	}
+	if block.Blocked {
+		if !block.NextProbeAt.IsZero() {
+			return block.NextProbeAt
+		}
+		if block.Until.After(now) {
+			return block.Until
+		}
+	}
+	return time.Time{}
+}
+
 func directAttemptDecisionForPeer(selfNode, peerNode api.Node, selfCandidates, peerCandidates []string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) directAttemptDecision {
+	block := laterBlockState(
+		directAttemptBlockStateWithPolicy(selfState, now, policy),
+		directAttemptBlockStateWithPolicy(peerState, now, policy),
+	)
+	nextAt := directAttemptDecisionNextAt(selfState, peerState, now, block, latestAttempt)
 	if latestAttempt != nil && !now.After(latestAttempt.ExpiresAt) {
 		return directAttemptDecision{
 			Status: "attempt_issued",
 			Reason: strings.TrimSpace(latestAttempt.Reason),
 			At:     latestAttempt.IssuedAt,
+			NextAt: nextAt,
 		}
 	}
-	block := laterBlockState(
-		directAttemptBlockStateWithPolicy(selfState, now, policy),
-		directAttemptBlockStateWithPolicy(peerState, now, policy),
-	)
 	if block.Blocked {
 		return directAttemptDecision{
 			Status: "blocked",
 			Reason: block.Reason,
 			At:     now,
+			NextAt: nextAt,
 		}
 	}
 	if !isNodeOnlineWithPolicy(selfNode, now, policy) {
@@ -829,12 +854,14 @@ func directAttemptDecisionForPeer(selfNode, peerNode api.Node, selfCandidates, p
 			Status: "eligible",
 			Reason: reason,
 			At:     now,
+			NextAt: now,
 		}
 	}
 	return directAttemptDecision{
 		Status: "idle",
 		Reason: "not_scheduled",
 		At:     now,
+		NextAt: nextAt,
 	}
 }
 
@@ -858,6 +885,7 @@ func recoveryStateForPeer(selfNode, peerNode api.Node, selfCandidates, peerCandi
 		DecisionStatus: decision.Status,
 		DecisionReason: decision.Reason,
 		DecisionAt:     decision.At,
+		DecisionNextAt: decision.NextAt,
 	}
 	if latestAttempt != nil {
 		recoveryState = applyDirectAttemptTrace(recoveryState, *latestAttempt)

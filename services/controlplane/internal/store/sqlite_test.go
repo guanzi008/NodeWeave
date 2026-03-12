@@ -533,6 +533,9 @@ func TestSQLiteBootstrapIncludesObservedFailureBudget(t *testing.T) {
 	if resp.PeerRecoveryStates[0].DecisionStatus != "blocked" || resp.PeerRecoveryStates[0].DecisionReason != "suppressed_timeout_budget" || resp.PeerRecoveryStates[0].DecisionAt.IsZero() {
 		t.Fatalf("expected recovery state to include decision metadata, got %#v", resp.PeerRecoveryStates)
 	}
+	if resp.PeerRecoveryStates[0].DecisionNextAt.IsZero() {
+		t.Fatalf("expected recovery state to include next decision timestamp, got %#v", resp.PeerRecoveryStates)
+	}
 	if !resp.PeerRecoveryStates[0].ProbeLimited || resp.PeerRecoveryStates[0].ProbeRemaining != 2 {
 		t.Fatalf("expected recovery state to include probe budget details, got %#v", resp.PeerRecoveryStates)
 	}
@@ -555,6 +558,9 @@ func TestSQLiteBootstrapIncludesObservedFailureBudget(t *testing.T) {
 	}
 	if bootstrap.Peers[0].ObservedDirectRecoveryDecisionStatus != "blocked" || bootstrap.Peers[0].ObservedDirectRecoveryDecisionReason != "suppressed_timeout_budget" || bootstrap.Peers[0].ObservedDirectRecoveryDecisionAt.IsZero() {
 		t.Fatalf("expected bootstrap peer to expose direct recovery decision metadata, got %#v", bootstrap.Peers[0])
+	}
+	if bootstrap.Peers[0].ObservedDirectRecoveryDecisionNextAt.IsZero() {
+		t.Fatalf("expected bootstrap peer to expose next direct recovery decision time, got %#v", bootstrap.Peers[0])
 	}
 	if !bootstrap.Peers[0].ObservedDirectRecoveryProbeLimited || bootstrap.Peers[0].ObservedDirectRecoveryProbeRemaining != 2 {
 		t.Fatalf("expected observed recovery probe budget in bootstrap peer, got %#v", bootstrap.Peers[0])

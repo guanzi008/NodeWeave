@@ -108,7 +108,7 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - 控制面 bootstrap 里的 peer endpoint 现在会保留来源和观测时间，session 编译优先使用最新的 STUN / static candidate，而不是一串无序裸地址
 - 控制面会基于双方最新 heartbeat、endpoint freshness 和 peer transport 摘要下发一次性 `direct_attempts`，并优先把当前 relay 活跃的链路标成 `relay_active`
 - 如果任一侧刚上报了 `timeout` / `relay_kept` 这类 direct attempt 失败结果，控制面会进入短暂冷却窗口，避免连续抖动重试
-- 这些窗口现在都可以通过控制面环境变量调节，包括在线判定、endpoint freshness、按失败类型区分的 cooldown、按失败类型区分的 `manual_recover` 升级阈值、按失败类型区分的失败预算与 suppression window、attempt window，以及 `relay_active` / `primary_upgrade` / `manual_recover` 各自独立的 lead/window/burst profile
+- 这些窗口现在都可以通过控制面环境变量调节，包括在线判定、endpoint freshness、按失败类型区分的 cooldown、按失败类型区分的 `manual_recover` 升级阈值、按失败类型区分的失败预算与 suppression window、attempt window，以及 `relay_active` / `secondary_only` / `primary_upgrade` / `manual_recover` 各自独立的 lead/window/burst profile
 - suppression 生效期间，controlplane 还可以按稀疏 probe interval 重新放行一次 `manual_recover`，避免在整个 block window 内完全沉默
 - 稀疏 probe 现在还支持按失败结果分层的 probe limit，避免在长 suppression window 里无限次放行恢复尝试
 - probe limit 也支持 quiet-period 自动回补，controlplane 会在 `peer_recovery_states` 和 bootstrap peer 摘要里暴露 `probe_refill_at`
@@ -118,8 +118,9 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - `linux-agent` 会消费控制面返回的 `direct_attempts`，到点调用显式 `ExecuteDirectAttempt(...)`，失败时保持现有 relay 活跃路径
 - `direct_attempts[*].candidates` 现在是结构化对象而不是裸地址，至少包含 `address/source/observed_at/priority/phase`
 - controlplane 会把 fresh `listener/stun` 划入 `primary` phase，把 `static/heartbeat` 划入 `secondary` phase；`secure-udp` 会先跑 `primary`，只有在 `execute_at` 已到且未建链时才进入 `secondary`
+- 如果当前可用的 direct candidate 只剩 `secondary`，controlplane 会切到 `secondary_only` profile，用更保守的时间窗继续尝试直连；一旦出现更新的 fresh `primary` candidate，再升级到 `primary_upgrade`
 - 如果上一轮恢复只打到了 `secondary`，而控制面已经看到了比上次失败更新的 fresh `primary` candidate，则下一轮会自动切到更激进的 `primary_upgrade` profile，而不是继续沿用普通 `fresh_endpoints` / `relay_active` 时间窗
-- `direct_attempts[*]` 现在还会带 `profile`，agent 本地 report、heartbeat 上报的 `peer_transport_states` 和 bootstrap peer 摘要也会保留最近一次命中的 profile，便于区分“普通恢复”还是 `primary_upgrade`
+- `direct_attempts[*]` 现在还会带 `profile`，agent 本地 report、heartbeat 上报的 `peer_transport_states` 和 bootstrap peer 摘要也会保留最近一次命中的 profile，便于区分“普通恢复”、“secondary_only” 还是 `primary_upgrade`
 - `primary_upgrade` 失败后的 cooldown、manual_recover 升级阈值和 suppression/probe 参数现在也可以独立配置；未单独设置时仍会回退到普通 `timeout` / `relay_kept` 恢复治理
 - `linux-agent` 会把未执行完的 `direct_attempts` 持久化到本地；dataplane 未就绪或 agent 重启后，只要 attempt 还没过期，就会在 secure-udp transport 恢复时继续调度
 - `linux-agent direct-attempt-status` 可直接查看这些仍在本地排队的 coordinated direct attempts

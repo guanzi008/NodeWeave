@@ -87,12 +87,12 @@ go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.js
 - 这些 coordinated direct burst 现在会在 `execute_at` 前的一个很短 prewarm lead 内提前开始 hello burst，提高双方同时打开 NAT 映射的机会
 - `direct_attempts[*].candidates` 现在是结构化候选，至少包含 `address/source/observed_at/priority/phase`；agent 会读旧的地址数组，但重新保存时统一写成对象数组
 - `phase=primary` 只用于 `listener/stun`，`phase=secondary` 只用于 `static/heartbeat`；`secure-udp` 会先打 `primary`，只有 `execute_at` 到点且仍未直连时才切到 `secondary`
-- `direct_attempts[*]` 现在还会带 `profile`，用来说明当前 attempt 走的是普通 `fresh_endpoints` / `relay_active` / `manual_recover` 还是更激进的 `primary_upgrade`
+- `direct_attempts[*]` 现在还会带 `profile`，用来说明当前 attempt 走的是普通 `fresh_endpoints` / `relay_active` / `manual_recover`、更保守的 `secondary_only`，还是更激进的 `primary_upgrade`
 - 如果 controlplane 对 `primary_upgrade` 单独配置了更保守的 cooldown、manual_recover 或 suppression/probe 参数，agent 侧不会改这套语义，只会按最新下发的 recovery states 和 direct attempts 执行
 - 这些未执行完的 `direct_attempts` 会写入 `direct_attempt_path`；如果 dataplane 暂时没起来，或者 agent / secure-udp runtime 重启了，只要 attempt 还没过期，就会在 transport 恢复后继续调度
 - `direct-attempt-status` 可直接查看当前还在本地排队、等待执行或等待 transport 恢复的 coordinated direct attempts
 - `direct-attempt-report` 会保留最近一段 attempt 生命周期，包括 `queued`、`waiting_transport`、`scheduled`、`executing`、`completed`、`expired`，以及 controlplane `issued_at`、profile、phase、命中的 source、等待原因、最后错误和命中的地址
-- heartbeat 上报的 peer transport 摘要现在还会带最近一次 direct attempt 命中的 `profile`、`source`、执行到的 `phase` 和本次使用的 candidate 数量，方便 controlplane 判断当前恢复尝试到底命中了哪类 direct candidate
+- heartbeat 上报的 peer transport 摘要现在还会带最近一次 direct attempt 命中的 `profile`、`source`、执行到的 `phase` 和本次使用的 candidate 数量，方便 controlplane 判断当前恢复尝试到底命中了哪类 direct candidate，以及下一轮是否该继续 `secondary_only` 还是升级成 `primary_upgrade`
 - 如果 controlplane 最新 recovery decision 已经把某个旧 attempt 判定为 block、direct 已恢复，或被更新的 attempt 替代，agent 会主动取消这个 stale attempt，并在 report 里保留取消原因
 - `recovery-status` 现在除了 block 原因、`next_probe_at` 和 probe 配额，还会带最近一次 controlplane 放行的 direct attempt ID / reason / profile / `issued_at` / `execute_at`
 - 即使 controlplane 这轮没有下发新的 `direct_attempt`，`recovery-status` 也会显示 `decision_status / decision_reason / decision_at / decision_next_at`，用于解释为什么当前没有被调度恢复，以及最早何时会重新评估

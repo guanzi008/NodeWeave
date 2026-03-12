@@ -49,6 +49,9 @@ type directAttemptPolicy struct {
 	RelayActiveAttemptLead                              time.Duration
 	RelayActiveAttemptWindow                            time.Duration
 	RelayActiveAttemptBurstInterval                     time.Duration
+	SecondaryOnlyAttemptLead                            time.Duration
+	SecondaryOnlyAttemptWindow                          time.Duration
+	SecondaryOnlyAttemptBurstInterval                   time.Duration
 	PrimaryUpgradeAttemptLead                           time.Duration
 	PrimaryUpgradeAttemptWindow                         time.Duration
 	PrimaryUpgradeAttemptBurstInterval                  time.Duration
@@ -97,6 +100,9 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 		RelayActiveAttemptLead:                              cfg.RelayActiveAttemptLead,
 		RelayActiveAttemptWindow:                            cfg.RelayActiveAttemptWindow,
 		RelayActiveAttemptBurstInterval:                     cfg.RelayActiveAttemptBurstInterval,
+		SecondaryOnlyAttemptLead:                            cfg.SecondaryOnlyAttemptLead,
+		SecondaryOnlyAttemptWindow:                          cfg.SecondaryOnlyAttemptWindow,
+		SecondaryOnlyAttemptBurstInterval:                   cfg.SecondaryOnlyAttemptBurstInterval,
 		PrimaryUpgradeAttemptLead:                           cfg.PrimaryUpgradeAttemptLead,
 		PrimaryUpgradeAttemptWindow:                         cfg.PrimaryUpgradeAttemptWindow,
 		PrimaryUpgradeAttemptBurstInterval:                  cfg.PrimaryUpgradeAttemptBurstInterval,
@@ -269,6 +275,20 @@ func (p directAttemptPolicy) profileForReason(reason string) directAttemptProfil
 	}
 }
 
+func (p directAttemptPolicy) profileForSecondaryOnlyReason(reason string) directAttemptProfile {
+	profile := p.profileForReason(reason)
+	if p.SecondaryOnlyAttemptLead > 0 {
+		profile.Lead = p.SecondaryOnlyAttemptLead
+	}
+	if p.SecondaryOnlyAttemptWindow > 0 {
+		profile.Window = p.SecondaryOnlyAttemptWindow
+	}
+	if p.SecondaryOnlyAttemptBurstInterval > 0 {
+		profile.BurstInterval = p.SecondaryOnlyAttemptBurstInterval
+	}
+	return profile
+}
+
 func (p directAttemptPolicy) profileForAttempt(reason string, selfCandidates, peerCandidates []api.DirectAttemptCandidate, selfState, peerState api.PeerTransportState, now time.Time) (string, directAttemptProfile) {
 	if shouldBypassDirectAttemptCooldownForPrimaryUpgrade(selfCandidates, peerCandidates, selfState, peerState, now, p) {
 		return "primary_upgrade", directAttemptProfile{
@@ -276,6 +296,9 @@ func (p directAttemptPolicy) profileForAttempt(reason string, selfCandidates, pe
 			Window:        p.PrimaryUpgradeAttemptWindow,
 			BurstInterval: p.PrimaryUpgradeAttemptBurstInterval,
 		}
+	}
+	if shouldUseSecondaryOnlyAttemptProfile(reason, selfCandidates, peerCandidates) {
+		return "secondary_only", p.profileForSecondaryOnlyReason(reason)
 	}
 	return strings.ToLower(strings.TrimSpace(reason)), p.profileForReason(reason)
 }
@@ -286,6 +309,10 @@ func normalizeDirectAttemptProfileName(profile string) string {
 
 func isPrimaryUpgradeAttemptProfile(profile string) bool {
 	return normalizeDirectAttemptProfileName(profile) == "primary_upgrade"
+}
+
+func isSecondaryOnlyAttemptProfile(profile string) bool {
+	return normalizeDirectAttemptProfileName(profile) == "secondary_only"
 }
 
 type directAttemptPair struct {
@@ -630,6 +657,15 @@ func hasPrimaryDirectAttemptCandidates(candidates []api.DirectAttemptCandidate) 
 	return false
 }
 
+func hasSecondaryDirectAttemptCandidates(candidates []api.DirectAttemptCandidate) bool {
+	for _, candidate := range candidates {
+		if api.NormalizeDirectAttemptPhase(candidate.Phase, candidate.Source) == api.DirectAttemptPhaseSecondary {
+			return true
+		}
+	}
+	return false
+}
+
 func shouldBypassDirectAttemptCooldownForPrimaryUpgrade(selfCandidates, peerCandidates []api.DirectAttemptCandidate, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
 	if !hasPrimaryDirectAttemptCandidates(selfCandidates) && !hasPrimaryDirectAttemptCandidates(peerCandidates) {
 		return false
@@ -637,7 +673,33 @@ func shouldBypassDirectAttemptCooldownForPrimaryUpgrade(selfCandidates, peerCand
 	return stateHasPrimaryUpgrade(selfCandidates, selfState, now, policy) || stateHasPrimaryUpgrade(peerCandidates, peerState, now, policy)
 }
 
+func shouldUseSecondaryOnlyAttemptProfile(reason string, selfCandidates, peerCandidates []api.DirectAttemptCandidate) bool {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "relay_active", "manual_recover":
+	default:
+		return false
+	}
+	if hasPrimaryDirectAttemptCandidates(selfCandidates) || hasPrimaryDirectAttemptCandidates(peerCandidates) {
+		return false
+	}
+	if !hasSecondaryDirectAttemptCandidates(selfCandidates) && !hasSecondaryDirectAttemptCandidates(peerCandidates) {
+		return false
+	}
+	return true
+}
+
 func stateHasPrimaryUpgrade(candidates []api.DirectAttemptCandidate, state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
+	if !stateUsedSecondaryDirectPath(state, now, policy) {
+		return false
+	}
+	attemptAt := state.LastDirectAttemptAt.UTC()
+	if attemptAt.IsZero() {
+		return false
+	}
+	return hasNewerPrimaryCandidateSince(candidates, attemptAt)
+}
+
+func stateUsedSecondaryDirectPath(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) bool {
 	if !transportStateFreshWithPolicy(state, now, policy) {
 		return false
 	}
@@ -646,14 +708,15 @@ func stateHasPrimaryUpgrade(candidates []api.DirectAttemptCandidate, state api.P
 	default:
 		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(state.LastDirectAttemptPhase), api.DirectAttemptPhaseSecondary) {
-		return false
+	phase := strings.ToLower(strings.TrimSpace(state.LastDirectAttemptPhase))
+	source := strings.TrimSpace(state.LastDirectAttemptReachedSource)
+	if phase != "" && api.NormalizeDirectAttemptPhase(phase, source) == api.DirectAttemptPhaseSecondary {
+		return true
 	}
-	attemptAt := state.LastDirectAttemptAt.UTC()
-	if attemptAt.IsZero() {
-		return false
+	if source != "" && api.NormalizeDirectAttemptPhase("", source) == api.DirectAttemptPhaseSecondary {
+		return true
 	}
-	return hasNewerPrimaryCandidateSince(candidates, attemptAt)
+	return isSecondaryOnlyAttemptProfile(state.LastDirectAttemptProfile)
 }
 
 func hasNewerPrimaryCandidateSince(candidates []api.DirectAttemptCandidate, since time.Time) bool {

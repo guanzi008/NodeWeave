@@ -53,6 +53,9 @@ type Config struct {
 	RelayActiveAttemptLead                              time.Duration
 	RelayActiveAttemptWindow                            time.Duration
 	RelayActiveAttemptBurstInterval                     time.Duration
+	SecondaryOnlyAttemptLead                            time.Duration
+	SecondaryOnlyAttemptWindow                          time.Duration
+	SecondaryOnlyAttemptBurstInterval                   time.Duration
 	PrimaryUpgradeAttemptLead                           time.Duration
 	PrimaryUpgradeAttemptWindow                         time.Duration
 	PrimaryUpgradeAttemptBurstInterval                  time.Duration
@@ -123,6 +126,9 @@ func Load() Config {
 		RelayActiveAttemptLead:                              getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD", 200*time.Millisecond),
 		RelayActiveAttemptWindow:                            getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW", 900*time.Millisecond),
 		RelayActiveAttemptBurstInterval:                     getEnvDuration("CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL", 60*time.Millisecond),
+		SecondaryOnlyAttemptLead:                            getEnvDuration("CONTROLPLANE_SECONDARY_ONLY_ATTEMPT_LEAD", 0),
+		SecondaryOnlyAttemptWindow:                          getEnvDuration("CONTROLPLANE_SECONDARY_ONLY_ATTEMPT_WINDOW", 0),
+		SecondaryOnlyAttemptBurstInterval:                   getEnvDuration("CONTROLPLANE_SECONDARY_ONLY_ATTEMPT_BURST_INTERVAL", 0),
 		PrimaryUpgradeAttemptLead:                           getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_LEAD", 0),
 		PrimaryUpgradeAttemptWindow:                         getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_WINDOW", 0),
 		PrimaryUpgradeAttemptBurstInterval:                  getEnvDuration("CONTROLPLANE_PRIMARY_UPGRADE_ATTEMPT_BURST_INTERVAL", 0),

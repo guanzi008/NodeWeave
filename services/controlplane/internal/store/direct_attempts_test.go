@@ -293,6 +293,107 @@ func TestDirectAttemptReasonWithPolicyCandidatesRequiresNewerPrimaryObservationF
 	}
 }
 
+func TestDirectAttemptReasonWithPolicyCandidatesUsesReachedSourceForPrimaryUpgrade(t *testing.T) {
+	now := time.Now().UTC()
+	attemptAt := now.Add(-3 * time.Second)
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:               30 * time.Second,
+		DirectAttemptCooldown:                  10 * time.Second,
+		DirectAttemptManualRecoverAfter:        20 * time.Second,
+		DirectAttemptTimeoutManualRecoverAfter: 20 * time.Second,
+	}
+
+	reason, schedule := directAttemptReasonWithPolicyCandidates(
+		[]api.DirectAttemptCandidate{storeDirectAttemptCandidateForSource("198.51.100.10:51820", "stun", now)},
+		[]api.DirectAttemptCandidate{storeDirectAttemptCandidateForSource("203.0.113.20:51820", "listener", now)},
+		api.PeerTransportState{
+			ActiveKind:                     "relay",
+			ReportedAt:                     now,
+			LastDirectAttemptAt:            attemptAt,
+			LastDirectAttemptResult:        "timeout",
+			LastDirectAttemptReachedSource: "heartbeat",
+		},
+		api.PeerTransportState{
+			ActiveKind: "relay",
+			ReportedAt: now,
+		},
+		now,
+		policy,
+	)
+	if !schedule || reason != "relay_active" {
+		t.Fatalf("expected secondary reached source to unlock primary upgrade scheduling, got reason=%q schedule=%v", reason, schedule)
+	}
+}
+
+func TestProfileForAttemptUsesSecondaryOnlyProfile(t *testing.T) {
+	now := time.Now().UTC()
+	policy := directAttemptPolicy{
+		DirectAttemptLead:                      150 * time.Millisecond,
+		DirectAttemptWindow:                    600 * time.Millisecond,
+		DirectAttemptBurstInterval:             80 * time.Millisecond,
+		RelayActiveAttemptLead:                 200 * time.Millisecond,
+		RelayActiveAttemptWindow:               900 * time.Millisecond,
+		RelayActiveAttemptBurstInterval:        60 * time.Millisecond,
+		SecondaryOnlyAttemptLead:               350 * time.Millisecond,
+		SecondaryOnlyAttemptWindow:             1800 * time.Millisecond,
+		SecondaryOnlyAttemptBurstInterval:      45 * time.Millisecond,
+		TransportFreshnessWindow:               30 * time.Second,
+		DirectAttemptManualRecoverAfter:        20 * time.Second,
+		DirectAttemptTimeoutManualRecoverAfter: 20 * time.Second,
+	}
+
+	profileName, profile := policy.profileForAttempt(
+		"relay_active",
+		[]api.DirectAttemptCandidate{storeDirectAttemptCandidateForSource("198.51.100.10:51820", "heartbeat", now)},
+		[]api.DirectAttemptCandidate{storeDirectAttemptCandidateForSource("203.0.113.20:51820", "static", now)},
+		api.PeerTransportState{ActiveKind: "relay", ReportedAt: now},
+		api.PeerTransportState{ActiveKind: "relay", ReportedAt: now},
+		now,
+	)
+	if profileName != "secondary_only" {
+		t.Fatalf("expected secondary_only profile, got %q", profileName)
+	}
+	if profile.Lead != 350*time.Millisecond || profile.Window != 1800*time.Millisecond || profile.BurstInterval != 45*time.Millisecond {
+		t.Fatalf("unexpected secondary_only profile timings: %#v", profile)
+	}
+}
+
+func TestProfileForAttemptUsesPrimaryUpgradeAfterSecondaryOnlyProfile(t *testing.T) {
+	now := time.Now().UTC()
+	attemptAt := now.Add(-4 * time.Second)
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:           30 * time.Second,
+		DirectAttemptCooldown:              10 * time.Second,
+		RelayActiveAttemptLead:             200 * time.Millisecond,
+		RelayActiveAttemptWindow:           900 * time.Millisecond,
+		RelayActiveAttemptBurstInterval:    60 * time.Millisecond,
+		PrimaryUpgradeAttemptLead:          120 * time.Millisecond,
+		PrimaryUpgradeAttemptWindow:        1400 * time.Millisecond,
+		PrimaryUpgradeAttemptBurstInterval: 40 * time.Millisecond,
+	}
+
+	profileName, profile := policy.profileForAttempt(
+		"relay_active",
+		[]api.DirectAttemptCandidate{storeDirectAttemptCandidateForSource("198.51.100.10:51820", "stun", now)},
+		[]api.DirectAttemptCandidate{storeDirectAttemptCandidateForSource("203.0.113.20:51820", "listener", now)},
+		api.PeerTransportState{
+			ActiveKind:               "relay",
+			ReportedAt:               now,
+			LastDirectAttemptAt:      attemptAt,
+			LastDirectAttemptResult:  "relay_kept",
+			LastDirectAttemptProfile: "secondary_only",
+		},
+		api.PeerTransportState{ActiveKind: "relay", ReportedAt: now},
+		now,
+	)
+	if profileName != "primary_upgrade" {
+		t.Fatalf("expected primary_upgrade profile, got %q", profileName)
+	}
+	if profile.Lead != 120*time.Millisecond || profile.Window != 1400*time.Millisecond || profile.BurstInterval != 40*time.Millisecond {
+		t.Fatalf("unexpected primary_upgrade timings: %#v", profile)
+	}
+}
+
 func TestDirectAttemptReasonUsesPrimaryUpgradeManualRecoverThreshold(t *testing.T) {
 	now := time.Now().UTC()
 	policy := directAttemptPolicy{

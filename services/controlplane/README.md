@@ -52,6 +52,9 @@ go run ./cmd/controlplane
 - `CONTROLPLANE_DIRECT_ATTEMPT_FAILURE_SUPPRESS_WINDOW=2m`
 - `CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_SUPPRESS_WINDOW=2m`
 - `CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_SUPPRESS_WINDOW=2m`
+- `CONTROLPLANE_DIRECT_ATTEMPT_SUPPRESSED_PROBE_INTERVAL=30s`
+- `CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_SUPPRESSED_PROBE_INTERVAL=30s`
+- `CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_SUPPRESSED_PROBE_INTERVAL=30s`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD=200ms`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW=900ms`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL=60ms`
@@ -67,8 +70,9 @@ go run ./cmd/controlplane
 - 冷却结束后，如果 relay 仍持续活跃，则后续尝试会标记成 `manual_recover`
 - `timeout` 和 `relay_kept` 也可以分别配置不同的 `manual_recover` 升级阈值；未单独设置时回退到 `CONTROLPLANE_DIRECT_ATTEMPT_MANUAL_RECOVER_AFTER`
 - direct attempt 连续失败达到预算后，控制面会在 suppression window 内暂停继续恢复；`timeout` 和 `relay_kept` 可以分别配置不同的失败预算和抑制窗口
+- suppression 生效期间也可以配置稀疏恢复探测窗口；达到 `*_SUPPRESSED_PROBE_INTERVAL` 后，控制面会重新放行一次 `manual_recover`，而不是一直等到 block 彻底过期
 - `relay_active` 和 `manual_recover` 可以使用独立的 lead/window/burst profile，不必和 `fresh_endpoints` 共用一套时间窗
-- 当前 block 状态会同时反映到 `HeartbeatResponse.peer_recovery_states` 和 bootstrap peer 摘要里，便于 agent 和运维侧观察恢复治理结果
+- 当前 block 状态会同时反映到 `HeartbeatResponse.peer_recovery_states` 和 bootstrap peer 摘要里，包含 `next_probe_at`，便于 agent 和运维侧观察下一次恢复放行时间
 
 ## 测试
 

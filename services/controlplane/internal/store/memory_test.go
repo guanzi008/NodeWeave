@@ -721,3 +721,80 @@ func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 		t.Fatalf("expected observed recovery block state in bootstrap peer, got %#v", bootstrap.Peers)
 	}
 }
+
+func TestMemoryStoreSchedulesSuppressedProbeAfterInterval(t *testing.T) {
+	cfg := config.Config{
+		RegistrationToken:                    "dev-register-token",
+		DirectAttemptCooldown:                2 * time.Second,
+		DirectAttemptFailureSuppressAfter:    3,
+		DirectAttemptFailureSuppressWindow:   90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:    3,
+		DirectAttemptTimeoutSuppressWindow:   90 * time.Second,
+		DirectAttemptSuppressedProbeInterval: 15 * time.Second,
+	}
+	dataStore := NewMemoryStore(cfg)
+
+	nodeA, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-a",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-a",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node a: %v", err)
+	}
+	nodeB, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-b",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-b",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node b: %v", err)
+	}
+
+	attemptAt := time.Now().UTC().Add(-16 * time.Second)
+	if _, err := dataStore.UpdateHeartbeat(nodeA.Node.ID, nodeA.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "198.51.100.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:                nodeB.Node.ID,
+			ActiveKind:                "relay",
+			ReportedAt:                time.Now().UTC(),
+			LastDirectAttemptAt:       attemptAt,
+			LastDirectAttemptResult:   "timeout",
+			ConsecutiveDirectFailures: 3,
+		}},
+	}); err != nil {
+		t.Fatalf("heartbeat node a: %v", err)
+	}
+	resp, err := dataStore.UpdateHeartbeat(nodeB.Node.ID, nodeB.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "203.0.113.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:          nodeA.Node.ID,
+			ActiveKind:          "relay",
+			ReportedAt:          time.Now().UTC(),
+			LastDirectAttemptAt: attemptAt,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("heartbeat node b: %v", err)
+	}
+	if len(resp.DirectAttempts) != 1 || resp.DirectAttempts[0].Reason != "manual_recover" {
+		t.Fatalf("expected suppressed probe to schedule one manual_recover attempt, got %#v", resp.DirectAttempts)
+	}
+	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].NextProbeAt.IsZero() {
+		t.Fatalf("expected recovery state to include next_probe_at, got %#v", resp.PeerRecoveryStates)
+	}
+
+	bootstrap, err := dataStore.GetBootstrap(nodeB.Node.ID, nodeB.NodeToken)
+	if err != nil {
+		t.Fatalf("get bootstrap for node b: %v", err)
+	}
+	if len(bootstrap.Peers) != 1 || bootstrap.Peers[0].ObservedDirectRecoveryNextProbeAt.IsZero() {
+		t.Fatalf("expected bootstrap peer to expose next probe at, got %#v", bootstrap.Peers)
+	}
+}

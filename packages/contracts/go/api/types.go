@@ -82,6 +82,7 @@ type PeerRecoveryState struct {
 	Blocked      bool      `json:"blocked"`
 	BlockReason  string    `json:"block_reason,omitempty"`
 	BlockedUntil time.Time `json:"blocked_until,omitempty"`
+	NextProbeAt  time.Time `json:"next_probe_at,omitempty"`
 }
 
 type Route struct {
@@ -125,6 +126,7 @@ type Peer struct {
 	ObservedDirectRecoveryBlocked      bool                  `json:"observed_direct_recovery_blocked,omitempty"`
 	ObservedDirectRecoveryBlockReason  string                `json:"observed_direct_recovery_block_reason,omitempty"`
 	ObservedDirectRecoveryBlockedUntil time.Time             `json:"observed_direct_recovery_blocked_until,omitempty"`
+	ObservedDirectRecoveryNextProbeAt  time.Time             `json:"observed_direct_recovery_next_probe_at,omitempty"`
 }
 
 type RelayNode struct {

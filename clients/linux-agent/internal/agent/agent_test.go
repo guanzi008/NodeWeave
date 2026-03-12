@@ -564,6 +564,7 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 				Blocked:      true,
 				BlockReason:  "suppressed_timeout_budget",
 				BlockedUntil: time.Now().UTC().Add(30 * time.Second),
+				NextProbeAt:  time.Now().UTC().Add(10 * time.Second),
 			}},
 		}); err != nil {
 			t.Fatalf("encode heartbeat response: %v", err)
@@ -612,6 +613,9 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	}
 	if len(recoveryStates) != 1 || !recoveryStates[0].Blocked || recoveryStates[0].PeerNodeID != "node-b" {
 		t.Fatalf("expected persisted recovery state from heartbeat response, got %#v", recoveryStates)
+	}
+	if recoveryStates[0].NextProbeAt.IsZero() {
+		t.Fatalf("expected persisted recovery next probe timestamp, got %#v", recoveryStates)
 	}
 
 	transportCancel()

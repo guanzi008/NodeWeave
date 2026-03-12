@@ -207,6 +207,9 @@ components:
         blocked_until:
           type: string
           format: date-time
+        next_probe_at:
+          type: string
+          format: date-time
     DirectAttemptInstruction:
       type: object
       properties:
@@ -287,6 +290,9 @@ components:
         observed_direct_recovery_block_reason:
           type: string
         observed_direct_recovery_blocked_until:
+          type: string
+          format: date-time
+        observed_direct_recovery_next_probe_at:
           type: string
           format: date-time
     HeartbeatRequest:

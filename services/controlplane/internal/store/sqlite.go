@@ -752,6 +752,7 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 			peer.ObservedDirectRecoveryBlocked = recoveryState.Blocked
 			peer.ObservedDirectRecoveryBlockReason = recoveryState.BlockReason
 			peer.ObservedDirectRecoveryBlockedUntil = recoveryState.BlockedUntil
+			peer.ObservedDirectRecoveryNextProbeAt = recoveryState.NextProbeAt
 		}
 		peers = append(peers, peer)
 	}

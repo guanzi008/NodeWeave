@@ -84,6 +84,7 @@ go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.js
 - heartbeat 也会上报每个 peer 的当前 transport 摘要，包括 `active_kind`、`active_address` 和最近一次 direct attempt 结果
 - 如果 heartbeat 响应里的 `bootstrap_version` 比本地新，agent 会立即拉取新的 bootstrap、重编 runtime 并重载 dataplane
 - 如果 heartbeat 响应里带有 `direct_attempts`，agent 会在本地短期调度队列里按 `execute_at/window/burst_interval` 执行 coordinated direct burst；控制面会优先把 relay 活跃链路下发为 `relay_active`
+- 这些 coordinated direct burst 现在会在 `execute_at` 前的一个很短 prewarm lead 内提前开始 hello burst，提高双方同时打开 NAT 映射的机会
 - 这些未执行完的 `direct_attempts` 会写入 `direct_attempt_path`；如果 dataplane 暂时没起来，或者 agent / secure-udp runtime 重启了，只要 attempt 还没过期，就会在 transport 恢复后继续调度
 - `direct-attempt-status` 可直接查看当前还在本地排队、等待执行或等待 transport 恢复的 coordinated direct attempts
 - `direct-attempt-report` 会保留最近一段 attempt 生命周期，包括 `queued`、`waiting_transport`、`scheduled`、`executing`、`completed`、`expired`，以及 controlplane `issued_at`、等待原因、最后错误和命中的地址

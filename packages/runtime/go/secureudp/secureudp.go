@@ -722,8 +722,12 @@ func (t *Transport) ExecuteDirectAttempt(ctx context.Context, attempt DirectAtte
 		attempt.BurstInterval = t.handshakeRetryInterval
 	}
 
-	if !attempt.ExecuteAt.IsZero() && time.Now().UTC().Before(attempt.ExecuteAt) {
-		timer := time.NewTimer(time.Until(attempt.ExecuteAt))
+	deadline := time.Now().UTC().Add(attempt.Window)
+	if !attempt.ExecuteAt.IsZero() {
+		deadline = attempt.ExecuteAt.Add(attempt.Window)
+	}
+	if prewarmStart := directAttemptPrewarmStart(time.Now().UTC(), attempt.ExecuteAt, attempt.Window, attempt.BurstInterval); !prewarmStart.IsZero() && time.Now().UTC().Before(prewarmStart) {
+		timer := time.NewTimer(time.Until(prewarmStart))
 		defer timer.Stop()
 		select {
 		case <-ctx.Done():
@@ -735,7 +739,7 @@ func (t *Transport) ExecuteDirectAttempt(ctx context.Context, attempt DirectAtte
 		}
 	}
 
-	if !attempt.ExecuteAt.IsZero() && time.Now().UTC().After(attempt.ExecuteAt.Add(attempt.Window)) {
+	if !deadline.IsZero() && time.Now().UTC().After(deadline) {
 		result.Result = "cancelled"
 		result.Error = "direct attempt window expired"
 		completedAt := time.Now().UTC()
@@ -760,7 +764,7 @@ func (t *Transport) ExecuteDirectAttempt(ctx context.Context, attempt DirectAtte
 
 	previousActive := t.activeAddress(result.PeerNodeID)
 	t.recordDirectTry(result.PeerNodeID)
-	reachedAddress, err := t.ensureAnySessionWithTiming(ctx, result.PeerNodeID, candidates, attempt.Window, attempt.BurstInterval)
+	reachedAddress, err := t.ensureAnySessionUntil(ctx, result.PeerNodeID, candidates, deadline, attempt.BurstInterval)
 	result.CompletedAt = time.Now().UTC()
 	result.ActiveAddress = t.activeAddress(result.PeerNodeID)
 
@@ -860,18 +864,30 @@ func (t *Transport) ensureAnySession(ctx context.Context, peerNodeID string, add
 }
 
 func (t *Transport) ensureAnySessionWithTiming(ctx context.Context, peerNodeID string, addresses []string, handshakeTimeout, retryInterval time.Duration) (string, error) {
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = t.handshakeTimeout
+	}
+	return t.ensureAnySessionUntil(ctx, peerNodeID, addresses, time.Now().UTC().Add(handshakeTimeout), retryInterval)
+}
+
+func (t *Transport) ensureAnySessionUntil(ctx context.Context, peerNodeID string, addresses []string, deadline time.Time, retryInterval time.Duration) (string, error) {
 	attempts := dedupeAddresses(addresses)
 	if len(attempts) == 0 {
 		return "", errors.New("no candidate address is available for secure transport")
 	}
-	if handshakeTimeout <= 0 {
-		handshakeTimeout = t.handshakeTimeout
-	}
 	if retryInterval <= 0 {
 		retryInterval = t.handshakeRetryInterval
 	}
-	if retryInterval > handshakeTimeout {
-		retryInterval = handshakeTimeout
+	if deadline.IsZero() {
+		deadline = time.Now().UTC().Add(t.handshakeTimeout)
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		t.recordHandshakeTimeout(peerNodeID, strings.Join(attempts, ","))
+		return "", fmt.Errorf("secure transport handshake timeout for peer %s", peerNodeID)
+	}
+	if retryInterval > remaining {
+		retryInterval = remaining
 	}
 
 	t.stateMu.Lock()
@@ -921,7 +937,7 @@ func (t *Transport) ensureAnySessionWithTiming(ctx context.Context, peerNodeID s
 		return "", err
 	}
 
-	timer := time.NewTimer(handshakeTimeout)
+	timer := time.NewTimer(remaining)
 	defer timer.Stop()
 	retryTicker := time.NewTicker(retryInterval)
 	defer retryTicker.Stop()
@@ -949,6 +965,44 @@ func (t *Transport) ensureAnySessionWithTiming(ctx context.Context, peerNodeID s
 			}
 		}
 	}
+}
+
+func directAttemptPrewarmStart(now, executeAt time.Time, window, burstInterval time.Duration) time.Time {
+	if executeAt.IsZero() || !executeAt.After(now) {
+		return time.Time{}
+	}
+	lead := directAttemptPrewarmLead(executeAt.Sub(now), window, burstInterval)
+	if lead <= 0 {
+		return time.Time{}
+	}
+	return executeAt.Add(-lead)
+}
+
+func directAttemptPrewarmLead(untilExecute, window, burstInterval time.Duration) time.Duration {
+	if untilExecute <= 0 {
+		return 0
+	}
+	if burstInterval <= 0 {
+		burstInterval = 100 * time.Millisecond
+	}
+	lead := burstInterval * 2
+	if lead <= 0 {
+		lead = burstInterval
+	}
+	if window > 0 {
+		halfWindow := window / 2
+		if halfWindow > 0 && lead > halfWindow {
+			lead = halfWindow
+		}
+	}
+	maxLead := 250 * time.Millisecond
+	if lead > maxLead {
+		lead = maxLead
+	}
+	if lead > untilExecute {
+		lead = untilExecute
+	}
+	return lead
 }
 
 func (t *Transport) probeSTUNServer(ctx context.Context, server string, timeout time.Duration) (string, time.Duration, error) {

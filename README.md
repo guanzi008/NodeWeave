@@ -114,6 +114,7 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - probe limit 也支持 quiet-period 自动回补，controlplane 会在 `peer_recovery_states` 和 bootstrap peer 摘要里暴露 `probe_refill_at`
 - controlplane 还会把每个 peer 当前的恢复 block 状态通过 `peer_recovery_states` 回给 agent，并在 bootstrap peer 摘要里暴露 block 原因、截止时间、下一次 probe 时间和剩余 probe 配额
 - `secure-udp` 在 direct 建链时会在一个握手窗口内跨多个 direct candidate 重复发送 `hello` burst，帮助 relay 活跃期间更主动地恢复直连
+- controlplane 协调下发的 `direct_attempt` 现在会在 `execute_at` 前的一个很短 prewarm lead 内就开始 hello burst，而不是严格等到整点才发第一包，从而更接近真实 simultaneous-open
 - `linux-agent` 会消费控制面返回的 `direct_attempts`，到点调用显式 `ExecuteDirectAttempt(...)`，失败时保持现有 relay 活跃路径
 - `linux-agent` 会把未执行完的 `direct_attempts` 持久化到本地；dataplane 未就绪或 agent 重启后，只要 attempt 还没过期，就会在 secure-udp transport 恢复时继续调度
 - `linux-agent direct-attempt-status` 可直接查看这些仍在本地排队的 coordinated direct attempts

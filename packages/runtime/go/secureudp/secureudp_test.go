@@ -756,6 +756,82 @@ func TestExecuteDirectAttemptCancelledBeforeExecution(t *testing.T) {
 	}
 }
 
+func TestExecuteDirectAttemptStartsShortlyBeforeExecuteAt(t *testing.T) {
+	privateKeyA, _, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair A: %v", err)
+	}
+	_, fakePublicKeyB, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate fake key pair B: %v", err)
+	}
+
+	sniffer, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen sniffer: %v", err)
+	}
+	defer func() { _ = sniffer.Close() }()
+
+	packetAtCh := make(chan time.Time, 8)
+	go func() {
+		buffer := make([]byte, 2048)
+		for {
+			if err := sniffer.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				return
+			}
+			if _, _, err := sniffer.ReadFrom(buffer); err != nil {
+				return
+			}
+			select {
+			case packetAtCh <- time.Now().UTC():
+			default:
+			}
+		}
+	}()
+
+	transportA, err := Listen(Config{
+		NodeID:                 "node-a",
+		ListenAddress:          "127.0.0.1:0",
+		PrivateKey:             privateKeyA,
+		HandshakeTimeout:       500 * time.Millisecond,
+		HandshakeRetryInterval: 50 * time.Millisecond,
+		Peers: []session.Peer{
+			{NodeID: "node-b", PublicKey: fakePublicKeyB, Candidates: []session.Candidate{{Kind: "direct", Address: sniffer.LocalAddr().String(), Priority: 1000}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("listen transport A: %v", err)
+	}
+	defer func() { _ = transportA.Close() }()
+
+	executeAt := time.Now().UTC().Add(220 * time.Millisecond)
+	_, err = transportA.ExecuteDirectAttempt(context.Background(), DirectAttempt{
+		AttemptID:     "attempt-prewarm-lead",
+		PeerNodeID:    "node-b",
+		Candidates:    []string{sniffer.LocalAddr().String()},
+		ExecuteAt:     executeAt,
+		Window:        120 * time.Millisecond,
+		BurstInterval: 50 * time.Millisecond,
+		Reason:        "manual_recover",
+	})
+	if err == nil {
+		t.Fatal("expected timeout without responder")
+	}
+
+	firstPacketAt := time.Time{}
+	deadline := time.After(500 * time.Millisecond)
+	for firstPacketAt.IsZero() {
+		select {
+		case firstPacketAt = <-packetAtCh:
+		case <-deadline:
+			t.Fatal("timed out waiting for prewarm packet")
+		}
+	}
+	if !firstPacketAt.Before(executeAt) {
+		t.Fatalf("expected first hello burst before execute_at=%s, got %s", executeAt.Format(time.RFC3339Nano), firstPacketAt.Format(time.RFC3339Nano))
+	}
+}
+
 func TestTransportSendUsesDirectBurstAcrossCandidates(t *testing.T) {
 	privateKeyA, publicKeyA, err := GenerateKeyPair()
 	if err != nil {

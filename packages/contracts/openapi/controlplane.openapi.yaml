@@ -218,6 +218,9 @@ components:
           type: integer
         probe_remaining:
           type: integer
+        probe_refill_at:
+          type: string
+          format: date-time
     DirectAttemptInstruction:
       type: object
       properties:
@@ -311,6 +314,9 @@ components:
           type: integer
         observed_direct_recovery_probe_remaining:
           type: integer
+        observed_direct_recovery_probe_refill_at:
+          type: string
+          format: date-time
     HeartbeatRequest:
       type: object
       properties:

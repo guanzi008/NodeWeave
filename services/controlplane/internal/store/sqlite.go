@@ -757,6 +757,7 @@ func (s *SQLiteStore) peersTx(tx *sql.Tx, selfNodeID string, routes []api.Route)
 			peer.ObservedDirectRecoveryProbeBudget = recoveryState.ProbeBudget
 			peer.ObservedDirectRecoveryProbeFailures = recoveryState.ProbeFailures
 			peer.ObservedDirectRecoveryProbeRemaining = recoveryState.ProbeRemaining
+			peer.ObservedDirectRecoveryProbeRefillAt = recoveryState.ProbeRefillAt
 		}
 		peers = append(peers, peer)
 	}

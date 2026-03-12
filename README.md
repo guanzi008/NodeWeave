@@ -109,6 +109,7 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - 这些窗口现在都可以通过控制面环境变量调节，包括在线判定、endpoint freshness、按失败类型区分的 cooldown、按失败类型区分的 `manual_recover` 升级阈值、按失败类型区分的失败预算与 suppression window、attempt window，以及 `relay_active` / `manual_recover` 各自独立的 lead/window/burst profile
 - suppression 生效期间，controlplane 还可以按稀疏 probe interval 重新放行一次 `manual_recover`，避免在整个 block window 内完全沉默
 - 稀疏 probe 现在还支持按失败结果分层的 probe limit，避免在长 suppression window 里无限次放行恢复尝试
+- probe limit 也支持 quiet-period 自动回补，controlplane 会在 `peer_recovery_states` 和 bootstrap peer 摘要里暴露 `probe_refill_at`
 - controlplane 还会把每个 peer 当前的恢复 block 状态通过 `peer_recovery_states` 回给 agent，并在 bootstrap peer 摘要里暴露 block 原因、截止时间、下一次 probe 时间和剩余 probe 配额
 - `secure-udp` 在 direct 建链时会在一个握手窗口内跨多个 direct candidate 重复发送 `hello` burst，帮助 relay 活跃期间更主动地恢复直连
 - `linux-agent` 会消费控制面返回的 `direct_attempts`，到点调用显式 `ExecuteDirectAttempt(...)`，失败时保持现有 relay 活跃路径

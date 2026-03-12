@@ -87,6 +87,7 @@ type PeerRecoveryState struct {
 	ProbeBudget    int       `json:"probe_budget,omitempty"`
 	ProbeFailures  int       `json:"probe_failures,omitempty"`
 	ProbeRemaining int       `json:"probe_remaining,omitempty"`
+	ProbeRefillAt  time.Time `json:"probe_refill_at,omitempty"`
 }
 
 type Route struct {
@@ -135,6 +136,7 @@ type Peer struct {
 	ObservedDirectRecoveryProbeBudget    int                   `json:"observed_direct_recovery_probe_budget,omitempty"`
 	ObservedDirectRecoveryProbeFailures  int                   `json:"observed_direct_recovery_probe_failures,omitempty"`
 	ObservedDirectRecoveryProbeRemaining int                   `json:"observed_direct_recovery_probe_remaining,omitempty"`
+	ObservedDirectRecoveryProbeRefillAt  time.Time             `json:"observed_direct_recovery_probe_refill_at,omitempty"`
 }
 
 type RelayNode struct {

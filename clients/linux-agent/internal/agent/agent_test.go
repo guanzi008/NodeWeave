@@ -569,6 +569,7 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 				ProbeBudget:    2,
 				ProbeFailures:  1,
 				ProbeRemaining: 1,
+				ProbeRefillAt:  time.Now().UTC().Add(40 * time.Second),
 			}},
 		}); err != nil {
 			t.Fatalf("encode heartbeat response: %v", err)
@@ -623,6 +624,9 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	}
 	if !recoveryStates[0].ProbeLimited || recoveryStates[0].ProbeBudget != 2 || recoveryStates[0].ProbeFailures != 1 || recoveryStates[0].ProbeRemaining != 1 {
 		t.Fatalf("expected persisted recovery probe budget details, got %#v", recoveryStates)
+	}
+	if recoveryStates[0].ProbeRefillAt.IsZero() {
+		t.Fatalf("expected persisted recovery probe refill time, got %#v", recoveryStates)
 	}
 
 	transportCancel()

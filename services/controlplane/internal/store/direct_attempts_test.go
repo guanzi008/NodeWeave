@@ -205,6 +205,39 @@ func TestDirectAttemptReasonStopsAfterSuppressedProbeBudgetExhausted(t *testing.
 	}
 }
 
+func TestDirectAttemptReasonAllowsSuppressedProbeAfterRefill(t *testing.T) {
+	now := time.Now().UTC()
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:                          30 * time.Second,
+		DirectAttemptCooldown:                             2 * time.Second,
+		DirectAttemptFailureSuppressAfter:                 3,
+		DirectAttemptFailureSuppressWindow:                90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:                 3,
+		DirectAttemptTimeoutSuppressWindow:                90 * time.Second,
+		DirectAttemptSuppressedProbeInterval:              15 * time.Second,
+		DirectAttemptTimeoutSuppressedProbeInterval:       15 * time.Second,
+		DirectAttemptSuppressedProbeLimit:                 2,
+		DirectAttemptTimeoutSuppressedProbeLimit:          2,
+		DirectAttemptSuppressedProbeRefillInterval:        30 * time.Second,
+		DirectAttemptTimeoutSuppressedProbeRefillInterval: 30 * time.Second,
+	}
+
+	reason, schedule := directAttemptReasonWithPolicy(api.PeerTransportState{
+		ActiveKind:                "relay",
+		ReportedAt:                now,
+		LastDirectAttemptAt:       now.Add(-31 * time.Second),
+		LastDirectAttemptResult:   "timeout",
+		ConsecutiveDirectFailures: 5,
+	}, api.PeerTransportState{
+		ActiveKind:          "relay",
+		ReportedAt:          now,
+		LastDirectAttemptAt: now.Add(-31 * time.Second),
+	}, now, policy)
+	if !schedule || reason != "manual_recover" {
+		t.Fatalf("expected probe refill to reopen manual_recover, got reason=%q schedule=%v", reason, schedule)
+	}
+}
+
 func TestDirectAttemptReasonSkipsSuppressionAfterRecentSuccess(t *testing.T) {
 	now := time.Now().UTC()
 	policy := directAttemptPolicy{
@@ -260,16 +293,18 @@ func TestRecoveryStateForPeerUsesLongestBlock(t *testing.T) {
 func TestRecoveryStateForPeerIncludesNextProbeAt(t *testing.T) {
 	now := time.Now().UTC()
 	policy := directAttemptPolicy{
-		TransportFreshnessWindow:                    30 * time.Second,
-		DirectAttemptCooldown:                       2 * time.Second,
-		DirectAttemptFailureSuppressAfter:           3,
-		DirectAttemptFailureSuppressWindow:          90 * time.Second,
-		DirectAttemptTimeoutSuppressAfter:           3,
-		DirectAttemptTimeoutSuppressWindow:          90 * time.Second,
-		DirectAttemptSuppressedProbeInterval:        20 * time.Second,
-		DirectAttemptTimeoutSuppressedProbeInterval: 20 * time.Second,
-		DirectAttemptSuppressedProbeLimit:           2,
-		DirectAttemptTimeoutSuppressedProbeLimit:    2,
+		TransportFreshnessWindow:                          30 * time.Second,
+		DirectAttemptCooldown:                             2 * time.Second,
+		DirectAttemptFailureSuppressAfter:                 3,
+		DirectAttemptFailureSuppressWindow:                90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:                 3,
+		DirectAttemptTimeoutSuppressWindow:                90 * time.Second,
+		DirectAttemptSuppressedProbeInterval:              20 * time.Second,
+		DirectAttemptTimeoutSuppressedProbeInterval:       20 * time.Second,
+		DirectAttemptSuppressedProbeLimit:                 2,
+		DirectAttemptTimeoutSuppressedProbeLimit:          2,
+		DirectAttemptSuppressedProbeRefillInterval:        30 * time.Second,
+		DirectAttemptTimeoutSuppressedProbeRefillInterval: 30 * time.Second,
 	}
 
 	attemptAt := now.Add(-5 * time.Second)
@@ -287,6 +322,41 @@ func TestRecoveryStateForPeerIncludesNextProbeAt(t *testing.T) {
 	}
 	if !recoveryState.ProbeLimited || recoveryState.ProbeBudget != 2 || recoveryState.ProbeFailures != 0 || recoveryState.ProbeRemaining != 2 {
 		t.Fatalf("expected recovery state to include probe budget details, got %#v", recoveryState)
+	}
+	if !recoveryState.ProbeRefillAt.IsZero() {
+		t.Fatalf("expected no refill timestamp while budget is untouched, got %#v", recoveryState)
+	}
+}
+
+func TestRecoveryStateForPeerIncludesProbeRefillAtAfterBudgetExhausted(t *testing.T) {
+	now := time.Now().UTC()
+	policy := directAttemptPolicy{
+		TransportFreshnessWindow:                          30 * time.Second,
+		DirectAttemptCooldown:                             2 * time.Second,
+		DirectAttemptFailureSuppressAfter:                 3,
+		DirectAttemptFailureSuppressWindow:                90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:                 3,
+		DirectAttemptTimeoutSuppressWindow:                90 * time.Second,
+		DirectAttemptSuppressedProbeInterval:              15 * time.Second,
+		DirectAttemptTimeoutSuppressedProbeInterval:       15 * time.Second,
+		DirectAttemptSuppressedProbeLimit:                 2,
+		DirectAttemptTimeoutSuppressedProbeLimit:          2,
+		DirectAttemptSuppressedProbeRefillInterval:        30 * time.Second,
+		DirectAttemptTimeoutSuppressedProbeRefillInterval: 30 * time.Second,
+	}
+
+	attemptAt := now.Add(-16 * time.Second)
+	recoveryState := recoveryStateForPeer("node-b", api.PeerTransportState{
+		PeerNodeID:                "node-b",
+		ActiveKind:                "relay",
+		ReportedAt:                now,
+		LastDirectAttemptAt:       attemptAt,
+		LastDirectAttemptResult:   "timeout",
+		ConsecutiveDirectFailures: 5,
+	}, api.PeerTransportState{}, now, policy)
+	wantRefill := attemptAt.Add(30 * time.Second)
+	if recoveryState.ProbeRemaining != 0 || recoveryState.ProbeRefillAt.IsZero() || !recoveryState.ProbeRefillAt.Equal(wantRefill) {
+		t.Fatalf("expected exhausted budget to expose refill time %s, got %#v", wantRefill, recoveryState)
 	}
 }
 
@@ -384,6 +454,18 @@ func TestDirectAttemptPolicyDefaultsResultSpecificSuppressedProbeLimitToBase(t *
 	}
 	if policy.DirectAttemptRelayKeptSuppressedProbeLimit != 3 {
 		t.Fatalf("expected relay_kept suppressed probe limit to fall back to base value, got %d", policy.DirectAttemptRelayKeptSuppressedProbeLimit)
+	}
+}
+
+func TestDirectAttemptPolicyDefaultsResultSpecificSuppressedProbeRefillIntervalToBase(t *testing.T) {
+	policy := directAttemptPolicyFromConfig(config.Config{
+		DirectAttemptSuppressedProbeRefillInterval: 21 * time.Second,
+	})
+	if policy.DirectAttemptTimeoutSuppressedProbeRefillInterval != 21*time.Second {
+		t.Fatalf("expected timeout suppressed probe refill interval to fall back to base value, got %s", policy.DirectAttemptTimeoutSuppressedProbeRefillInterval)
+	}
+	if policy.DirectAttemptRelayKeptSuppressedProbeRefillInterval != 21*time.Second {
+		t.Fatalf("expected relay_kept suppressed probe refill interval to fall back to base value, got %s", policy.DirectAttemptRelayKeptSuppressedProbeRefillInterval)
 	}
 }
 

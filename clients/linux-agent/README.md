@@ -88,6 +88,7 @@ go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.js
 - heartbeat 响应里的 `peer_recovery_states` 会落到本地 `recovery_state_path`，`recovery-status` 可直接查看当前哪些 peer 被 controlplane block、block 原因、截止时间、`next_probe_at` 和剩余 probe 配额
 - 如果 suppression 仍未结束，但 controlplane 配置了 `*_SUPPRESSED_PROBE_INTERVAL`，后续 heartbeat 里仍可能收到一小批 `manual_recover` 指令做稀疏恢复尝试
 - 如果 controlplane 同时配置了 `*_SUPPRESSED_PROBE_LIMIT`，当剩余 probe 配额耗尽后，agent 将只看到 block 状态更新，不会再收到新的 suppressed probe 恢复指令
+- 如果 controlplane 还配置了 `*_SUPPRESSED_PROBE_REFILL_INTERVAL`，`recovery-status` 里会额外显示 `probe_refill_at`，表示 quiet period 之后配额何时自动恢复
 - 最新 STUN 结果会写入 `stun_report_path`
 - `stun-status` 可查看各个 server 的可达性、RTT 和当前选中的 reflexive address
 - 当 `secure-udp` 数据面已经运行时，STUN 会复用同一个 UDP 监听 socket，对外发现出的 reflexive port 会和真实数据面端口一致；只有数据面还没启动时才回退到独立探测 socket

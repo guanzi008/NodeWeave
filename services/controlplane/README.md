@@ -58,6 +58,9 @@ go run ./cmd/controlplane
 - `CONTROLPLANE_DIRECT_ATTEMPT_SUPPRESSED_PROBE_LIMIT=2`
 - `CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_SUPPRESSED_PROBE_LIMIT=2`
 - `CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_SUPPRESSED_PROBE_LIMIT=2`
+- `CONTROLPLANE_DIRECT_ATTEMPT_SUPPRESSED_PROBE_REFILL_INTERVAL=30s`
+- `CONTROLPLANE_DIRECT_ATTEMPT_TIMEOUT_SUPPRESSED_PROBE_REFILL_INTERVAL=30s`
+- `CONTROLPLANE_DIRECT_ATTEMPT_RELAY_KEPT_SUPPRESSED_PROBE_REFILL_INTERVAL=30s`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_LEAD=200ms`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_WINDOW=900ms`
 - `CONTROLPLANE_RELAY_ACTIVE_ATTEMPT_BURST_INTERVAL=60ms`
@@ -75,8 +78,9 @@ go run ./cmd/controlplane
 - direct attempt 连续失败达到预算后，控制面会在 suppression window 内暂停继续恢复；`timeout` 和 `relay_kept` 可以分别配置不同的失败预算和抑制窗口
 - suppression 生效期间也可以配置稀疏恢复探测窗口；达到 `*_SUPPRESSED_PROBE_INTERVAL` 后，控制面会重新放行一次 `manual_recover`，而不是一直等到 block 彻底过期
 - 稀疏恢复探测还可以再加一层 probe limit；达到 `*_SUPPRESSED_PROBE_LIMIT` 后，即使 suppression window 还没结束，也不会再继续放行 probe
+- probe limit 现在还支持 quiet-period 自动回补；达到 `*_SUPPRESSED_PROBE_REFILL_INTERVAL` 后，已消耗的 probe 配额会逐步恢复
 - `relay_active` 和 `manual_recover` 可以使用独立的 lead/window/burst profile，不必和 `fresh_endpoints` 共用一套时间窗
-- 当前 block 状态会同时反映到 `HeartbeatResponse.peer_recovery_states` 和 bootstrap peer 摘要里，包含 `next_probe_at`、`probe_budget`、`probe_failures` 和 `probe_remaining`
+- 当前 block 状态会同时反映到 `HeartbeatResponse.peer_recovery_states` 和 bootstrap peer 摘要里，包含 `next_probe_at`、`probe_budget`、`probe_failures`、`probe_remaining` 和 `probe_refill_at`
 
 ## 测试
 

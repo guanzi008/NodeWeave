@@ -642,18 +642,20 @@ func TestMemoryStoreUsesRelayKeptManualRecoverThresholdOverride(t *testing.T) {
 
 func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 	dataStore := NewMemoryStore(config.Config{
-		AdminEmail:                               "admin@example.com",
-		AdminPassword:                            "dev-password",
-		AdminToken:                               "dev-admin-token",
-		RegistrationToken:                        "dev-register-token",
-		DNSDomain:                                "internal.net",
-		DirectAttemptCooldown:                    2 * time.Second,
-		DirectAttemptFailureSuppressAfter:        3,
-		DirectAttemptFailureSuppressWindow:       2 * time.Minute,
-		DirectAttemptTimeoutSuppressAfter:        3,
-		DirectAttemptTimeoutSuppressWindow:       2 * time.Minute,
-		DirectAttemptSuppressedProbeLimit:        2,
-		DirectAttemptTimeoutSuppressedProbeLimit: 2,
+		AdminEmail:                                        "admin@example.com",
+		AdminPassword:                                     "dev-password",
+		AdminToken:                                        "dev-admin-token",
+		RegistrationToken:                                 "dev-register-token",
+		DNSDomain:                                         "internal.net",
+		DirectAttemptCooldown:                             2 * time.Second,
+		DirectAttemptFailureSuppressAfter:                 3,
+		DirectAttemptFailureSuppressWindow:                2 * time.Minute,
+		DirectAttemptTimeoutSuppressAfter:                 3,
+		DirectAttemptTimeoutSuppressWindow:                2 * time.Minute,
+		DirectAttemptSuppressedProbeLimit:                 2,
+		DirectAttemptTimeoutSuppressedProbeLimit:          2,
+		DirectAttemptSuppressedProbeRefillInterval:        30 * time.Second,
+		DirectAttemptTimeoutSuppressedProbeRefillInterval: 30 * time.Second,
 	})
 
 	nodeA, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
@@ -714,6 +716,9 @@ func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 	if !resp.PeerRecoveryStates[0].ProbeLimited || resp.PeerRecoveryStates[0].ProbeRemaining != 2 {
 		t.Fatalf("expected recovery state to include probe budget details, got %#v", resp.PeerRecoveryStates)
 	}
+	if !resp.PeerRecoveryStates[0].ProbeRefillAt.IsZero() {
+		t.Fatalf("expected untouched budget to omit probe refill time, got %#v", resp.PeerRecoveryStates)
+	}
 
 	bootstrap, err := dataStore.GetBootstrap(nodeB.Node.ID, nodeB.NodeToken)
 	if err != nil {
@@ -728,18 +733,22 @@ func TestMemoryStoreSuppressesAttemptsAfterFailureBudget(t *testing.T) {
 	if !bootstrap.Peers[0].ObservedDirectRecoveryProbeLimited || bootstrap.Peers[0].ObservedDirectRecoveryProbeRemaining != 2 {
 		t.Fatalf("expected observed recovery probe budget in bootstrap peer, got %#v", bootstrap.Peers)
 	}
+	if !bootstrap.Peers[0].ObservedDirectRecoveryProbeRefillAt.IsZero() {
+		t.Fatalf("expected untouched probe budget to omit refill time in bootstrap peer, got %#v", bootstrap.Peers)
+	}
 }
 
 func TestMemoryStoreSchedulesSuppressedProbeAfterInterval(t *testing.T) {
 	cfg := config.Config{
-		RegistrationToken:                    "dev-register-token",
-		DirectAttemptCooldown:                2 * time.Second,
-		DirectAttemptFailureSuppressAfter:    3,
-		DirectAttemptFailureSuppressWindow:   90 * time.Second,
-		DirectAttemptTimeoutSuppressAfter:    3,
-		DirectAttemptTimeoutSuppressWindow:   90 * time.Second,
-		DirectAttemptSuppressedProbeInterval: 15 * time.Second,
-		DirectAttemptSuppressedProbeLimit:    2,
+		RegistrationToken:                          "dev-register-token",
+		DirectAttemptCooldown:                      2 * time.Second,
+		DirectAttemptFailureSuppressAfter:          3,
+		DirectAttemptFailureSuppressWindow:         90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:          3,
+		DirectAttemptTimeoutSuppressWindow:         90 * time.Second,
+		DirectAttemptSuppressedProbeInterval:       15 * time.Second,
+		DirectAttemptSuppressedProbeLimit:          2,
+		DirectAttemptSuppressedProbeRefillInterval: 30 * time.Second,
 	}
 	dataStore := NewMemoryStore(cfg)
 
@@ -801,6 +810,9 @@ func TestMemoryStoreSchedulesSuppressedProbeAfterInterval(t *testing.T) {
 	if resp.PeerRecoveryStates[0].ProbeRemaining != 2 {
 		t.Fatalf("expected suppressed probe budget to remain available, got %#v", resp.PeerRecoveryStates)
 	}
+	if !resp.PeerRecoveryStates[0].ProbeRefillAt.IsZero() {
+		t.Fatalf("expected available probe budget to omit refill time, got %#v", resp.PeerRecoveryStates)
+	}
 
 	bootstrap, err := dataStore.GetBootstrap(nodeB.Node.ID, nodeB.NodeToken)
 	if err != nil {
@@ -812,18 +824,22 @@ func TestMemoryStoreSchedulesSuppressedProbeAfterInterval(t *testing.T) {
 	if bootstrap.Peers[0].ObservedDirectRecoveryProbeRemaining != 2 {
 		t.Fatalf("expected bootstrap peer to expose remaining probe budget, got %#v", bootstrap.Peers)
 	}
+	if !bootstrap.Peers[0].ObservedDirectRecoveryProbeRefillAt.IsZero() {
+		t.Fatalf("expected bootstrap peer to omit refill time while budget is available, got %#v", bootstrap.Peers)
+	}
 }
 
 func TestMemoryStoreStopsSuppressedProbeWhenBudgetExhausted(t *testing.T) {
 	dataStore := NewMemoryStore(config.Config{
-		RegistrationToken:                    "dev-register-token",
-		DirectAttemptCooldown:                2 * time.Second,
-		DirectAttemptFailureSuppressAfter:    3,
-		DirectAttemptFailureSuppressWindow:   90 * time.Second,
-		DirectAttemptTimeoutSuppressAfter:    3,
-		DirectAttemptTimeoutSuppressWindow:   90 * time.Second,
-		DirectAttemptSuppressedProbeInterval: 15 * time.Second,
-		DirectAttemptSuppressedProbeLimit:    2,
+		RegistrationToken:                          "dev-register-token",
+		DirectAttemptCooldown:                      2 * time.Second,
+		DirectAttemptFailureSuppressAfter:          3,
+		DirectAttemptFailureSuppressWindow:         90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:          3,
+		DirectAttemptTimeoutSuppressWindow:         90 * time.Second,
+		DirectAttemptSuppressedProbeInterval:       15 * time.Second,
+		DirectAttemptSuppressedProbeLimit:          2,
+		DirectAttemptSuppressedProbeRefillInterval: 30 * time.Second,
 	})
 
 	nodeA, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
@@ -878,7 +894,80 @@ func TestMemoryStoreStopsSuppressedProbeWhenBudgetExhausted(t *testing.T) {
 	if len(resp.DirectAttempts) != 0 {
 		t.Fatalf("expected exhausted suppressed probe budget to skip direct attempts, got %#v", resp.DirectAttempts)
 	}
-	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].ProbeRemaining != 0 || !resp.PeerRecoveryStates[0].NextProbeAt.IsZero() {
-		t.Fatalf("expected recovery state to show exhausted probe budget, got %#v", resp.PeerRecoveryStates)
+	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].ProbeRemaining != 0 || resp.PeerRecoveryStates[0].NextProbeAt.IsZero() {
+		t.Fatalf("expected recovery state to show exhausted probe budget with refill gate, got %#v", resp.PeerRecoveryStates)
+	}
+	if resp.PeerRecoveryStates[0].ProbeRefillAt.IsZero() || !resp.PeerRecoveryStates[0].NextProbeAt.Equal(resp.PeerRecoveryStates[0].ProbeRefillAt) {
+		t.Fatalf("expected exhausted probe budget to expose refill time, got %#v", resp.PeerRecoveryStates)
+	}
+}
+
+func TestMemoryStoreRefillsSuppressedProbeBudgetAfterQuietPeriod(t *testing.T) {
+	dataStore := NewMemoryStore(config.Config{
+		RegistrationToken:                          "dev-register-token",
+		DirectAttemptCooldown:                      2 * time.Second,
+		DirectAttemptFailureSuppressAfter:          3,
+		DirectAttemptFailureSuppressWindow:         90 * time.Second,
+		DirectAttemptTimeoutSuppressAfter:          3,
+		DirectAttemptTimeoutSuppressWindow:         90 * time.Second,
+		DirectAttemptSuppressedProbeInterval:       15 * time.Second,
+		DirectAttemptSuppressedProbeLimit:          2,
+		DirectAttemptSuppressedProbeRefillInterval: 30 * time.Second,
+	})
+
+	nodeA, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-a",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-a",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node a: %v", err)
+	}
+	nodeB, err := dataStore.CreateDeviceAndNode(api.DeviceRegistrationRequest{
+		DeviceName:        "node-b",
+		Platform:          "linux",
+		Version:           "0.1.0",
+		PublicKey:         "pubkey-b",
+		RegistrationToken: "dev-register-token",
+	})
+	if err != nil {
+		t.Fatalf("register node b: %v", err)
+	}
+
+	attemptAt := time.Now().UTC().Add(-31 * time.Second)
+	if _, err := dataStore.UpdateHeartbeat(nodeA.Node.ID, nodeA.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "198.51.100.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:                nodeB.Node.ID,
+			ActiveKind:                "relay",
+			ReportedAt:                time.Now().UTC(),
+			LastDirectAttemptAt:       attemptAt,
+			LastDirectAttemptResult:   "timeout",
+			ConsecutiveDirectFailures: 5,
+		}},
+	}); err != nil {
+		t.Fatalf("heartbeat node a: %v", err)
+	}
+	resp, err := dataStore.UpdateHeartbeat(nodeB.Node.ID, nodeB.NodeToken, api.HeartbeatRequest{
+		Status:          "online",
+		EndpointRecords: []api.EndpointObservation{{Address: "203.0.113.10:51820", Source: "stun"}},
+		PeerTransportStates: []api.PeerTransportState{{
+			PeerNodeID:          nodeA.Node.ID,
+			ActiveKind:          "relay",
+			ReportedAt:          time.Now().UTC(),
+			LastDirectAttemptAt: attemptAt,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("heartbeat node b: %v", err)
+	}
+	if len(resp.DirectAttempts) != 1 || resp.DirectAttempts[0].Reason != "manual_recover" {
+		t.Fatalf("expected refill window to reopen one manual_recover attempt, got %#v", resp.DirectAttempts)
+	}
+	if len(resp.PeerRecoveryStates) != 1 || resp.PeerRecoveryStates[0].ProbeRemaining != 1 || resp.PeerRecoveryStates[0].ProbeRefillAt.IsZero() {
+		t.Fatalf("expected recovery state to reflect one refilled probe slot, got %#v", resp.PeerRecoveryStates)
 	}
 }

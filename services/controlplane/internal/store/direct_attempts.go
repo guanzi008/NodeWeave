@@ -16,72 +16,78 @@ const (
 )
 
 type directAttemptPolicy struct {
-	NodeOnlineWindow                              time.Duration
-	EndpointFreshnessWindow                       time.Duration
-	TransportFreshnessWindow                      time.Duration
-	DirectAttemptCooldown                         time.Duration
-	DirectAttemptTimeoutCooldown                  time.Duration
-	DirectAttemptRelayKeptCooldown                time.Duration
-	DirectAttemptLead                             time.Duration
-	DirectAttemptWindow                           time.Duration
-	DirectAttemptBurstInterval                    time.Duration
-	DirectAttemptRetention                        time.Duration
-	DirectAttemptManualRecoverAfter               time.Duration
-	DirectAttemptTimeoutManualRecoverAfter        time.Duration
-	DirectAttemptRelayKeptManualRecoverAfter      time.Duration
-	DirectAttemptFailureSuppressAfter             int
-	DirectAttemptTimeoutSuppressAfter             int
-	DirectAttemptRelayKeptSuppressAfter           int
-	DirectAttemptFailureSuppressWindow            time.Duration
-	DirectAttemptTimeoutSuppressWindow            time.Duration
-	DirectAttemptRelayKeptSuppressWindow          time.Duration
-	DirectAttemptSuppressedProbeInterval          time.Duration
-	DirectAttemptTimeoutSuppressedProbeInterval   time.Duration
-	DirectAttemptRelayKeptSuppressedProbeInterval time.Duration
-	DirectAttemptSuppressedProbeLimit             int
-	DirectAttemptTimeoutSuppressedProbeLimit      int
-	DirectAttemptRelayKeptSuppressedProbeLimit    int
-	RelayActiveAttemptLead                        time.Duration
-	RelayActiveAttemptWindow                      time.Duration
-	RelayActiveAttemptBurstInterval               time.Duration
-	ManualRecoverAttemptLead                      time.Duration
-	ManualRecoverAttemptWindow                    time.Duration
-	ManualRecoverAttemptBurstInterval             time.Duration
+	NodeOnlineWindow                                    time.Duration
+	EndpointFreshnessWindow                             time.Duration
+	TransportFreshnessWindow                            time.Duration
+	DirectAttemptCooldown                               time.Duration
+	DirectAttemptTimeoutCooldown                        time.Duration
+	DirectAttemptRelayKeptCooldown                      time.Duration
+	DirectAttemptLead                                   time.Duration
+	DirectAttemptWindow                                 time.Duration
+	DirectAttemptBurstInterval                          time.Duration
+	DirectAttemptRetention                              time.Duration
+	DirectAttemptManualRecoverAfter                     time.Duration
+	DirectAttemptTimeoutManualRecoverAfter              time.Duration
+	DirectAttemptRelayKeptManualRecoverAfter            time.Duration
+	DirectAttemptFailureSuppressAfter                   int
+	DirectAttemptTimeoutSuppressAfter                   int
+	DirectAttemptRelayKeptSuppressAfter                 int
+	DirectAttemptFailureSuppressWindow                  time.Duration
+	DirectAttemptTimeoutSuppressWindow                  time.Duration
+	DirectAttemptRelayKeptSuppressWindow                time.Duration
+	DirectAttemptSuppressedProbeInterval                time.Duration
+	DirectAttemptTimeoutSuppressedProbeInterval         time.Duration
+	DirectAttemptRelayKeptSuppressedProbeInterval       time.Duration
+	DirectAttemptSuppressedProbeLimit                   int
+	DirectAttemptTimeoutSuppressedProbeLimit            int
+	DirectAttemptRelayKeptSuppressedProbeLimit          int
+	DirectAttemptSuppressedProbeRefillInterval          time.Duration
+	DirectAttemptTimeoutSuppressedProbeRefillInterval   time.Duration
+	DirectAttemptRelayKeptSuppressedProbeRefillInterval time.Duration
+	RelayActiveAttemptLead                              time.Duration
+	RelayActiveAttemptWindow                            time.Duration
+	RelayActiveAttemptBurstInterval                     time.Duration
+	ManualRecoverAttemptLead                            time.Duration
+	ManualRecoverAttemptWindow                          time.Duration
+	ManualRecoverAttemptBurstInterval                   time.Duration
 }
 
 func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	policy := directAttemptPolicy{
-		NodeOnlineWindow:                              cfg.NodeOnlineWindow,
-		EndpointFreshnessWindow:                       cfg.EndpointFreshnessWindow,
-		TransportFreshnessWindow:                      cfg.TransportFreshnessWindow,
-		DirectAttemptCooldown:                         cfg.DirectAttemptCooldown,
-		DirectAttemptTimeoutCooldown:                  cfg.DirectAttemptTimeoutCooldown,
-		DirectAttemptRelayKeptCooldown:                cfg.DirectAttemptRelayKeptCooldown,
-		DirectAttemptLead:                             cfg.DirectAttemptLead,
-		DirectAttemptWindow:                           cfg.DirectAttemptWindow,
-		DirectAttemptBurstInterval:                    cfg.DirectAttemptBurstInterval,
-		DirectAttemptRetention:                        cfg.DirectAttemptRetention,
-		DirectAttemptManualRecoverAfter:               cfg.DirectAttemptManualRecoverAfter,
-		DirectAttemptTimeoutManualRecoverAfter:        cfg.DirectAttemptTimeoutManualRecoverAfter,
-		DirectAttemptRelayKeptManualRecoverAfter:      cfg.DirectAttemptRelayKeptManualRecoverAfter,
-		DirectAttemptFailureSuppressAfter:             cfg.DirectAttemptFailureSuppressAfter,
-		DirectAttemptTimeoutSuppressAfter:             cfg.DirectAttemptTimeoutSuppressAfter,
-		DirectAttemptRelayKeptSuppressAfter:           cfg.DirectAttemptRelayKeptSuppressAfter,
-		DirectAttemptFailureSuppressWindow:            cfg.DirectAttemptFailureSuppressWindow,
-		DirectAttemptTimeoutSuppressWindow:            cfg.DirectAttemptTimeoutSuppressWindow,
-		DirectAttemptRelayKeptSuppressWindow:          cfg.DirectAttemptRelayKeptSuppressWindow,
-		DirectAttemptSuppressedProbeInterval:          cfg.DirectAttemptSuppressedProbeInterval,
-		DirectAttemptTimeoutSuppressedProbeInterval:   cfg.DirectAttemptTimeoutSuppressedProbeInterval,
-		DirectAttemptRelayKeptSuppressedProbeInterval: cfg.DirectAttemptRelayKeptSuppressedProbeInterval,
-		DirectAttemptSuppressedProbeLimit:             cfg.DirectAttemptSuppressedProbeLimit,
-		DirectAttemptTimeoutSuppressedProbeLimit:      cfg.DirectAttemptTimeoutSuppressedProbeLimit,
-		DirectAttemptRelayKeptSuppressedProbeLimit:    cfg.DirectAttemptRelayKeptSuppressedProbeLimit,
-		RelayActiveAttemptLead:                        cfg.RelayActiveAttemptLead,
-		RelayActiveAttemptWindow:                      cfg.RelayActiveAttemptWindow,
-		RelayActiveAttemptBurstInterval:               cfg.RelayActiveAttemptBurstInterval,
-		ManualRecoverAttemptLead:                      cfg.ManualRecoverAttemptLead,
-		ManualRecoverAttemptWindow:                    cfg.ManualRecoverAttemptWindow,
-		ManualRecoverAttemptBurstInterval:             cfg.ManualRecoverAttemptBurstInterval,
+		NodeOnlineWindow:                                    cfg.NodeOnlineWindow,
+		EndpointFreshnessWindow:                             cfg.EndpointFreshnessWindow,
+		TransportFreshnessWindow:                            cfg.TransportFreshnessWindow,
+		DirectAttemptCooldown:                               cfg.DirectAttemptCooldown,
+		DirectAttemptTimeoutCooldown:                        cfg.DirectAttemptTimeoutCooldown,
+		DirectAttemptRelayKeptCooldown:                      cfg.DirectAttemptRelayKeptCooldown,
+		DirectAttemptLead:                                   cfg.DirectAttemptLead,
+		DirectAttemptWindow:                                 cfg.DirectAttemptWindow,
+		DirectAttemptBurstInterval:                          cfg.DirectAttemptBurstInterval,
+		DirectAttemptRetention:                              cfg.DirectAttemptRetention,
+		DirectAttemptManualRecoverAfter:                     cfg.DirectAttemptManualRecoverAfter,
+		DirectAttemptTimeoutManualRecoverAfter:              cfg.DirectAttemptTimeoutManualRecoverAfter,
+		DirectAttemptRelayKeptManualRecoverAfter:            cfg.DirectAttemptRelayKeptManualRecoverAfter,
+		DirectAttemptFailureSuppressAfter:                   cfg.DirectAttemptFailureSuppressAfter,
+		DirectAttemptTimeoutSuppressAfter:                   cfg.DirectAttemptTimeoutSuppressAfter,
+		DirectAttemptRelayKeptSuppressAfter:                 cfg.DirectAttemptRelayKeptSuppressAfter,
+		DirectAttemptFailureSuppressWindow:                  cfg.DirectAttemptFailureSuppressWindow,
+		DirectAttemptTimeoutSuppressWindow:                  cfg.DirectAttemptTimeoutSuppressWindow,
+		DirectAttemptRelayKeptSuppressWindow:                cfg.DirectAttemptRelayKeptSuppressWindow,
+		DirectAttemptSuppressedProbeInterval:                cfg.DirectAttemptSuppressedProbeInterval,
+		DirectAttemptTimeoutSuppressedProbeInterval:         cfg.DirectAttemptTimeoutSuppressedProbeInterval,
+		DirectAttemptRelayKeptSuppressedProbeInterval:       cfg.DirectAttemptRelayKeptSuppressedProbeInterval,
+		DirectAttemptSuppressedProbeLimit:                   cfg.DirectAttemptSuppressedProbeLimit,
+		DirectAttemptTimeoutSuppressedProbeLimit:            cfg.DirectAttemptTimeoutSuppressedProbeLimit,
+		DirectAttemptRelayKeptSuppressedProbeLimit:          cfg.DirectAttemptRelayKeptSuppressedProbeLimit,
+		DirectAttemptSuppressedProbeRefillInterval:          cfg.DirectAttemptSuppressedProbeRefillInterval,
+		DirectAttemptTimeoutSuppressedProbeRefillInterval:   cfg.DirectAttemptTimeoutSuppressedProbeRefillInterval,
+		DirectAttemptRelayKeptSuppressedProbeRefillInterval: cfg.DirectAttemptRelayKeptSuppressedProbeRefillInterval,
+		RelayActiveAttemptLead:                              cfg.RelayActiveAttemptLead,
+		RelayActiveAttemptWindow:                            cfg.RelayActiveAttemptWindow,
+		RelayActiveAttemptBurstInterval:                     cfg.RelayActiveAttemptBurstInterval,
+		ManualRecoverAttemptLead:                            cfg.ManualRecoverAttemptLead,
+		ManualRecoverAttemptWindow:                          cfg.ManualRecoverAttemptWindow,
+		ManualRecoverAttemptBurstInterval:                   cfg.ManualRecoverAttemptBurstInterval,
 	}
 	if policy.NodeOnlineWindow <= 0 {
 		policy.NodeOnlineWindow = 30 * time.Second
@@ -158,6 +164,15 @@ func directAttemptPolicyFromConfig(cfg config.Config) directAttemptPolicy {
 	if policy.DirectAttemptRelayKeptSuppressedProbeLimit <= 0 {
 		policy.DirectAttemptRelayKeptSuppressedProbeLimit = policy.DirectAttemptSuppressedProbeLimit
 	}
+	if policy.DirectAttemptSuppressedProbeRefillInterval < 0 {
+		policy.DirectAttemptSuppressedProbeRefillInterval = 0
+	}
+	if policy.DirectAttemptTimeoutSuppressedProbeRefillInterval <= 0 {
+		policy.DirectAttemptTimeoutSuppressedProbeRefillInterval = policy.DirectAttemptSuppressedProbeRefillInterval
+	}
+	if policy.DirectAttemptRelayKeptSuppressedProbeRefillInterval <= 0 {
+		policy.DirectAttemptRelayKeptSuppressedProbeRefillInterval = policy.DirectAttemptSuppressedProbeRefillInterval
+	}
 	if policy.RelayActiveAttemptLead <= 0 {
 		policy.RelayActiveAttemptLead = policy.DirectAttemptLead
 	}
@@ -230,6 +245,7 @@ type directAttemptBlockState struct {
 	ProbeBudget    int
 	ProbeFailures  int
 	ProbeRemaining int
+	ProbeRefillAt  time.Time
 }
 
 func pairKey(left, right string) string {
@@ -606,6 +622,23 @@ func (p directAttemptPolicy) suppressedProbeLimitForResult(result string) int {
 	}
 }
 
+func (p directAttemptPolicy) suppressedProbeRefillIntervalForResult(result string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "timeout":
+		if p.DirectAttemptTimeoutSuppressedProbeRefillInterval > 0 {
+			return p.DirectAttemptTimeoutSuppressedProbeRefillInterval
+		}
+		return p.DirectAttemptSuppressedProbeRefillInterval
+	case "relay_kept":
+		if p.DirectAttemptRelayKeptSuppressedProbeRefillInterval > 0 {
+			return p.DirectAttemptRelayKeptSuppressedProbeRefillInterval
+		}
+		return p.DirectAttemptSuppressedProbeRefillInterval
+	default:
+		return 0
+	}
+}
+
 func directAttemptCooldownStateWithPolicy(state api.PeerTransportState, now time.Time, policy directAttemptPolicy) directAttemptBlockState {
 	if !transportStateFreshWithPolicy(state, now, policy) {
 		return directAttemptBlockState{}
@@ -657,10 +690,25 @@ func directAttemptSuppressionStateWithPolicy(state api.PeerTransportState, now t
 	if extraFailures < 0 {
 		extraFailures = 0
 	}
+	refillInterval := policy.suppressedProbeRefillIntervalForResult(state.LastDirectAttemptResult)
+	refilled := 0
+	if refillInterval > 0 && extraFailures > 0 {
+		refilled = int(now.Sub(attemptAt) / refillInterval)
+		if refilled < 0 {
+			refilled = 0
+		}
+		if refilled > extraFailures {
+			refilled = extraFailures
+		}
+	}
+	effectiveFailures := extraFailures - refilled
+	if effectiveFailures < 0 {
+		effectiveFailures = 0
+	}
 	probeRemaining := 0
 	probeLimited := probeLimit > 0
 	if probeLimited {
-		probeRemaining = probeLimit - extraFailures
+		probeRemaining = probeLimit - effectiveFailures
 		if probeRemaining < 0 {
 			probeRemaining = 0
 		}
@@ -673,6 +721,18 @@ func directAttemptSuppressionStateWithPolicy(state api.PeerTransportState, now t
 			nextProbeAt = candidate
 		}
 	}
+	probeRefillAt := time.Time{}
+	if probeLimited && effectiveFailures > 0 && refillInterval > 0 {
+		candidate := attemptAt.Add(time.Duration(refilled+1) * refillInterval)
+		if candidate.Before(until) || candidate.Equal(until) {
+			probeRefillAt = candidate
+		}
+	}
+	if probeLimited && probeRemaining == 0 && !probeRefillAt.IsZero() {
+		if nextProbeAt.IsZero() || probeRefillAt.After(nextProbeAt) {
+			nextProbeAt = probeRefillAt
+		}
+	}
 	return directAttemptBlockState{
 		Blocked:        true,
 		Reason:         suppressionReasonForResult(state.LastDirectAttemptResult),
@@ -680,8 +740,9 @@ func directAttemptSuppressionStateWithPolicy(state api.PeerTransportState, now t
 		NextProbeAt:    nextProbeAt,
 		ProbeLimited:   probeLimited,
 		ProbeBudget:    probeLimit,
-		ProbeFailures:  extraFailures,
+		ProbeFailures:  effectiveFailures,
 		ProbeRemaining: probeRemaining,
+		ProbeRefillAt:  probeRefillAt,
 	}
 }
 
@@ -706,6 +767,7 @@ func recoveryStateForPeer(peerNodeID string, selfState, peerState api.PeerTransp
 		ProbeBudget:    block.ProbeBudget,
 		ProbeFailures:  block.ProbeFailures,
 		ProbeRemaining: block.ProbeRemaining,
+		ProbeRefillAt:  block.ProbeRefillAt,
 	}
 }
 
@@ -724,14 +786,19 @@ func laterBlockState(left, right directAttemptBlockState) directAttemptBlockStat
 			selected.ProbeBudget = 0
 			selected.ProbeFailures = 0
 			selected.ProbeRemaining = 0
+			selected.ProbeRefillAt = time.Time{}
 			return selected
 		}
 		selected.ProbeLimited = left.ProbeLimited || right.ProbeLimited
 		selected.ProbeBudget = mergeProbeBudget(left, right)
 		selected.ProbeFailures = maxInt(left.ProbeFailures, right.ProbeFailures)
 		selected.ProbeRemaining = mergeProbeRemaining(left, right)
+		selected.ProbeRefillAt = mergeProbeRefillAt(left, right, selected.ProbeRemaining)
 		if selected.ProbeLimited && selected.ProbeRemaining == 0 {
 			selected.NextProbeAt = time.Time{}
+			if !selected.ProbeRefillAt.IsZero() {
+				selected.NextProbeAt = selected.ProbeRefillAt
+			}
 			return selected
 		}
 		switch {
@@ -780,6 +847,33 @@ func mergeProbeRemaining(left, right directAttemptBlockState) int {
 		return right.ProbeRemaining
 	default:
 		return 0
+	}
+}
+
+func mergeProbeRefillAt(left, right directAttemptBlockState, remaining int) time.Time {
+	switch {
+	case remaining <= 0:
+		switch {
+		case left.ProbeRefillAt.IsZero():
+			return right.ProbeRefillAt
+		case right.ProbeRefillAt.IsZero():
+			return left.ProbeRefillAt
+		case right.ProbeRefillAt.After(left.ProbeRefillAt):
+			return right.ProbeRefillAt
+		default:
+			return left.ProbeRefillAt
+		}
+	default:
+		switch {
+		case left.ProbeRefillAt.IsZero():
+			return right.ProbeRefillAt
+		case right.ProbeRefillAt.IsZero():
+			return left.ProbeRefillAt
+		case right.ProbeRefillAt.Before(left.ProbeRefillAt):
+			return right.ProbeRefillAt
+		default:
+			return left.ProbeRefillAt
+		}
 	}
 }
 

@@ -383,6 +383,7 @@ func (s *MemoryStore) currentBootstrapLocked(selfNodeID string) api.BootstrapCon
 			peer.ObservedDirectRecoveryProbeBudget = recoveryState.ProbeBudget
 			peer.ObservedDirectRecoveryProbeFailures = recoveryState.ProbeFailures
 			peer.ObservedDirectRecoveryProbeRemaining = recoveryState.ProbeRemaining
+			peer.ObservedDirectRecoveryProbeRefillAt = recoveryState.ProbeRefillAt
 		}
 		peers = append(peers, peer)
 	}

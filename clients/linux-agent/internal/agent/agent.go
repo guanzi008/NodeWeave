@@ -41,6 +41,8 @@ type Service struct {
 	dataplaneRuntime  *activeDataplane
 	attemptMu         sync.Mutex
 	scheduledAttempts map[string]context.CancelFunc
+	recoveryMu        sync.RWMutex
+	recoveryStates    map[string]api.PeerRecoveryState
 }
 
 type activeDataplane struct {
@@ -75,10 +77,14 @@ func New(cfg config.Config) (*Service, error) {
 		client:            contractsclient.New(cfg.ServerURL),
 		runtimeDriver:     newRuntimeDriver(cfg),
 		scheduledAttempts: map[string]context.CancelFunc{},
+		recoveryStates:    map[string]api.PeerRecoveryState{},
 	}
 
 	if currentState, err := state.Load(cfg.StatePath); err == nil {
 		svc.state = currentState
+	}
+	if recoveryStates, err := state.LoadRecoveryStates(cfg.RecoveryStatePath); err == nil {
+		svc.setRecoveryStates(recoveryStates)
 	}
 	return svc, nil
 }
@@ -259,8 +265,44 @@ func (s *Service) sendHeartbeat(ctx context.Context) (api.HeartbeatResponse, err
 	if err := state.SaveRecoveryStates(s.cfg.RecoveryStatePath, resp.PeerRecoveryStates); err != nil {
 		return api.HeartbeatResponse{}, fmt.Errorf("save recovery states: %w", err)
 	}
+	s.setRecoveryStates(resp.PeerRecoveryStates)
 	s.scheduleDirectAttempts(resp.DirectAttempts)
 	return resp, nil
+}
+
+func (s *Service) setRecoveryStates(states []api.PeerRecoveryState) {
+	index := make(map[string]api.PeerRecoveryState, len(states))
+	for _, recoveryState := range states {
+		peerNodeID := strings.TrimSpace(recoveryState.PeerNodeID)
+		if peerNodeID == "" {
+			continue
+		}
+		recoveryState.PeerNodeID = peerNodeID
+		index[peerNodeID] = recoveryState
+	}
+	s.recoveryMu.Lock()
+	s.recoveryStates = index
+	s.recoveryMu.Unlock()
+}
+
+func (s *Service) warmupBlockedUntil(peerNodeID string, now time.Time) (time.Time, bool) {
+	peerNodeID = strings.TrimSpace(peerNodeID)
+	if peerNodeID == "" {
+		return time.Time{}, false
+	}
+	s.recoveryMu.RLock()
+	recoveryState, ok := s.recoveryStates[peerNodeID]
+	s.recoveryMu.RUnlock()
+	if !ok || !recoveryState.Blocked {
+		return time.Time{}, false
+	}
+	if !recoveryState.NextProbeAt.IsZero() && recoveryState.NextProbeAt.After(now) {
+		return recoveryState.NextProbeAt, true
+	}
+	if recoveryState.NextProbeAt.IsZero() && !recoveryState.BlockedUntil.IsZero() && recoveryState.BlockedUntil.After(now) {
+		return recoveryState.BlockedUntil, true
+	}
+	return time.Time{}, false
 }
 
 func (s *Service) heartbeatAndRefreshBootstrap(ctx context.Context) error {
@@ -898,6 +940,13 @@ func (s *Service) startDirectWarmup(ctx context.Context, transport *secureudp.Tr
 				if !directCandidates {
 					continue
 				}
+				if blockedUntil, blocked := s.warmupBlockedUntil(peer.NodeID, observedAt); blocked {
+					wait := blockedUntil.Sub(observedAt)
+					if wait > 0 && wait < nextWait {
+						nextWait = wait
+					}
+					continue
+				}
 				currentStatus := statuses[peer.NodeID]
 				if currentStatus.ActiveKind == "direct" && strings.TrimSpace(currentStatus.ActiveAddress) != "" {
 					continue
@@ -934,6 +983,13 @@ func (s *Service) startDirectWarmup(ctx context.Context, transport *secureudp.Tr
 				directCandidates = append(directCandidates, address)
 			}
 			if len(directCandidates) == 0 {
+				continue
+			}
+			if blockedUntil, blocked := s.warmupBlockedUntil(peer.NodeID, observedAt); blocked {
+				wait := blockedUntil.Sub(observedAt)
+				if wait > 0 && wait < nextWait {
+					nextWait = wait
+				}
 				continue
 			}
 

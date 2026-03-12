@@ -4,23 +4,23 @@
 
 ## 文档索引
 
-- [产品需求文档](/home/hao/AAA/NodeWeave/docs/prd.md)
-- [系统架构文档](/home/hao/AAA/NodeWeave/docs/architecture.md)
-- [需求追踪与开源借鉴矩阵](/home/hao/AAA/NodeWeave/docs/reference-map.md)
-- [开发任务拆分](/home/hao/AAA/NodeWeave/docs/task-breakdown.md)
-- [Codex 多 Agent 开发](/home/hao/AAA/NodeWeave/docs/codex-multi-agent-team.md)
+- [产品需求文档](docs/prd.md)
+- [系统架构文档](docs/architecture.md)
+- [需求追踪与开源借鉴矩阵](docs/reference-map.md)
+- [开发任务拆分](docs/task-breakdown.md)
+- [Codex 多 Agent 开发](docs/codex-multi-agent-team.md)
 
 多 Agent 本地编排运行时，当前阶段可查看：
 - `/home/hao/AAA/NodeWeave/.codex-team-runs/latest/current_phase.txt`
 
 ## 仓库结构
 
-- [services](/home/hao/AAA/NodeWeave/services/README.md)：服务端子项目
-- [clients](/home/hao/AAA/NodeWeave/clients/README.md)：桌面端和 CLI 子项目
-- [mobile](/home/hao/AAA/NodeWeave/mobile/README.md)：Android / iOS 子项目
-- [gateways](/home/hao/AAA/NodeWeave/gateways/README.md)：OpenWrt 和边缘桥接子项目
-- [packages](/home/hao/AAA/NodeWeave/packages/README.md)：共享协议与 SDK
-- [docs](/home/hao/AAA/NodeWeave/docs/prd.md)：需求、架构和任务拆分文档
+- [services](services/README.md)：服务端子项目
+- [clients](clients/README.md)：桌面端和 CLI 子项目
+- [mobile](mobile/README.md)：Android / iOS 子项目
+- [gateways](gateways/README.md)：OpenWrt 和边缘桥接子项目
+- [packages](packages/README.md)：共享协议与 SDK
+- [docs](docs/prd.md)：需求、架构和任务拆分文档
 
 ## 建议阅读顺序
 

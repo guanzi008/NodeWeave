@@ -12,7 +12,7 @@ Status: Active Baseline
 
 ## 2. 基本原则
 
-- 以 [PRD](/home/hao/AAA/NodeWeave/docs/prd.md) 为需求边界，以 [架构文档](/home/hao/AAA/NodeWeave/docs/architecture.md) 为实现边界。
+- 以 [PRD](prd.md) 为需求边界，以 [架构文档](architecture.md) 为实现边界。
 - “兼容 WireGuard / Tailscale / ZeroTier / EasyTier”始终定义为桥接互通，不等于复用对方控制面。
 - 借鉴重点是设计模式、链路策略、部署模型和工程经验，不是逐字复刻协议实现。
 - 当前代码虽然是 Linux-first，但产品目标始终是多平台、多版本、企业级控制与审计，不允许开发方向长期收缩成单平台工具。
@@ -91,8 +91,8 @@ Status: Active Baseline
 
 后续开发以三份文档共同约束：
 
-- [PRD](/home/hao/AAA/NodeWeave/docs/prd.md)
-- [架构文档](/home/hao/AAA/NodeWeave/docs/architecture.md)
-- [需求追踪与开源借鉴矩阵](/home/hao/AAA/NodeWeave/docs/reference-map.md)
+- [PRD](prd.md)
+- [架构文档](architecture.md)
+- [需求追踪与开源借鉴矩阵](reference-map.md)
 
 如果后续某项实现明显偏离这三份文档，应先修正文档或显式记录偏差原因，再继续开发。

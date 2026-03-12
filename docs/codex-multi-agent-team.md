@@ -25,9 +25,9 @@
 
 ## 文件
 
-- [codex_multi_agent_team.py](/home/hao/AAA/NodeWeave/scripts/codex_multi_agent_team.py)
-- [requirements-codex-agents.txt](/home/hao/AAA/NodeWeave/scripts/requirements-codex-agents.txt)
-- [codex_cli_multi_agent_team.py](/home/hao/AAA/NodeWeave/scripts/codex_cli_multi_agent_team.py)
+- [codex_multi_agent_team.py](../scripts/codex_multi_agent_team.py)
+- [requirements-codex-agents.txt](../scripts/requirements-codex-agents.txt)
+- [codex_cli_multi_agent_team.py](../scripts/codex_cli_multi_agent_team.py)
 
 ## 准备
 

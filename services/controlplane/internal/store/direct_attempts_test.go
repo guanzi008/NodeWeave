@@ -284,7 +284,7 @@ func TestRecoveryStateForPeerUsesLongestBlock(t *testing.T) {
 		LastDirectAttemptAt:       now.Add(-3 * time.Second),
 		LastDirectAttemptResult:   "timeout",
 		ConsecutiveDirectFailures: 3,
-	}, api.PeerTransportState{}, now, policy)
+	}, api.PeerTransportState{}, now, policy, nil)
 	if !recoveryState.Blocked || recoveryState.BlockReason != "suppressed_timeout_budget" {
 		t.Fatalf("expected suppression state to win over shorter cooldown, got %#v", recoveryState)
 	}
@@ -315,7 +315,7 @@ func TestRecoveryStateForPeerIncludesNextProbeAt(t *testing.T) {
 		LastDirectAttemptAt:       attemptAt,
 		LastDirectAttemptResult:   "timeout",
 		ConsecutiveDirectFailures: 3,
-	}, api.PeerTransportState{}, now, policy)
+	}, api.PeerTransportState{}, now, policy, nil)
 	want := attemptAt.Add(20 * time.Second)
 	if recoveryState.NextProbeAt.IsZero() || !recoveryState.NextProbeAt.Equal(want) {
 		t.Fatalf("expected next probe at %s, got %#v", want, recoveryState)
@@ -353,10 +353,33 @@ func TestRecoveryStateForPeerIncludesProbeRefillAtAfterBudgetExhausted(t *testin
 		LastDirectAttemptAt:       attemptAt,
 		LastDirectAttemptResult:   "timeout",
 		ConsecutiveDirectFailures: 5,
-	}, api.PeerTransportState{}, now, policy)
+	}, api.PeerTransportState{}, now, policy, nil)
 	wantRefill := attemptAt.Add(30 * time.Second)
 	if recoveryState.ProbeRemaining != 0 || recoveryState.ProbeRefillAt.IsZero() || !recoveryState.ProbeRefillAt.Equal(wantRefill) {
 		t.Fatalf("expected exhausted budget to expose refill time %s, got %#v", wantRefill, recoveryState)
+	}
+}
+
+func TestRecoveryStateForPeerIncludesLatestIssuedAttemptTrace(t *testing.T) {
+	now := time.Now().UTC()
+	recoveryState := recoveryStateForPeer(
+		"node-b",
+		api.PeerTransportState{},
+		api.PeerTransportState{},
+		now,
+		directAttemptPolicy{},
+		&directAttemptPair{
+			AttemptID: "attempt-node-a-node-b-1",
+			Reason:    "relay_active",
+			IssuedAt:  now.Add(-1 * time.Second),
+			ExecuteAt: now.Add(200 * time.Millisecond),
+		},
+	)
+	if recoveryState.LastIssuedAttemptID != "attempt-node-a-node-b-1" || recoveryState.LastIssuedAttemptReason != "relay_active" {
+		t.Fatalf("expected recovery state to include issued attempt trace, got %#v", recoveryState)
+	}
+	if recoveryState.LastIssuedAttemptAt.IsZero() || recoveryState.LastIssuedAttemptExecuteAt.IsZero() {
+		t.Fatalf("expected recovery state to include issued/execute timestamps, got %#v", recoveryState)
 	}
 }
 

@@ -200,6 +200,9 @@ func TestHeartbeatRoundTripsNATReportAndDirectAttempts(t *testing.T) {
 	if len(hbResp.DirectAttempts) == 0 {
 		t.Fatalf("expected direct attempts in heartbeat response, got %#v", hbResp)
 	}
+	if hbResp.DirectAttempts[0].IssuedAt.IsZero() {
+		t.Fatalf("expected heartbeat direct attempt to include issued_at, got %#v", hbResp.DirectAttempts)
+	}
 
 	bootstrapRec := sendJSON(t, handler, http.MethodGet, "/api/v1/nodes/"+first.Node.ID+"/bootstrap", first.NodeToken, nil)
 	if bootstrapRec.Code != http.StatusOK {
@@ -212,6 +215,9 @@ func TestHeartbeatRoundTripsNATReportAndDirectAttempts(t *testing.T) {
 	}
 	if bootstrap.Peers[0].NATMappingBehavior != "varying_port" || !bootstrap.Peers[0].NATReachable {
 		t.Fatalf("expected NAT summary on bootstrap peer, got %#v", bootstrap.Peers[0])
+	}
+	if bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptID == "" {
+		t.Fatalf("expected bootstrap peer to expose latest issued direct attempt trace, got %#v", bootstrap.Peers[0])
 	}
 }
 

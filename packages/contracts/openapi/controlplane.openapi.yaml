@@ -221,6 +221,16 @@ components:
         probe_refill_at:
           type: string
           format: date-time
+        last_issued_attempt_id:
+          type: string
+        last_issued_attempt_reason:
+          type: string
+        last_issued_attempt_at:
+          type: string
+          format: date-time
+        last_issued_attempt_execute_at:
+          type: string
+          format: date-time
     DirectAttemptInstruction:
       type: object
       properties:
@@ -228,6 +238,9 @@ components:
           type: string
         peer_node_id:
           type: string
+        issued_at:
+          type: string
+          format: date-time
         execute_at:
           type: string
           format: date-time
@@ -315,6 +328,16 @@ components:
         observed_direct_recovery_probe_remaining:
           type: integer
         observed_direct_recovery_probe_refill_at:
+          type: string
+          format: date-time
+        observed_direct_recovery_last_issued_attempt_id:
+          type: string
+        observed_direct_recovery_last_issued_attempt_reason:
+          type: string
+        observed_direct_recovery_last_issued_attempt_at:
+          type: string
+          format: date-time
+        observed_direct_recovery_last_issued_attempt_execute_at:
           type: string
           format: date-time
     HeartbeatRequest:

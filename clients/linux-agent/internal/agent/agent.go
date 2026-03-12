@@ -903,6 +903,9 @@ func normalizeDirectAttempt(instruction api.DirectAttemptInstruction) (api.Direc
 	instruction.PeerNodeID = strings.TrimSpace(instruction.PeerNodeID)
 	instruction.Reason = strings.TrimSpace(instruction.Reason)
 	instruction.Candidates = normalizedStrings(instruction.Candidates)
+	if !instruction.IssuedAt.IsZero() {
+		instruction.IssuedAt = instruction.IssuedAt.UTC()
+	}
 	if instruction.AttemptID == "" || instruction.PeerNodeID == "" {
 		return api.DirectAttemptInstruction{}, false
 	}
@@ -939,6 +942,7 @@ func (s *Service) touchDirectAttemptReportLocked(instruction api.DirectAttemptIn
 	entry := s.attemptReports[attemptID]
 	entry.AttemptID = attemptID
 	entry.PeerNodeID = strings.TrimSpace(instruction.PeerNodeID)
+	entry.IssuedAt = instruction.IssuedAt
 	entry.ExecuteAt = instruction.ExecuteAt
 	entry.Window = instruction.Window
 	entry.BurstInterval = instruction.BurstInterval

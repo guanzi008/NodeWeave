@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS direct_attempts (
     node_b_id TEXT NOT NULL,
     node_a_candidates_json TEXT NOT NULL DEFAULT '[]',
     node_b_candidates_json TEXT NOT NULL DEFAULT '[]',
+    issued_at TEXT NOT NULL DEFAULT '',
     execute_at TEXT NOT NULL,
     window_millis INTEGER NOT NULL,
     burst_interval_millis INTEGER NOT NULL,

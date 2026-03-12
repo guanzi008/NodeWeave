@@ -560,16 +560,20 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 			},
 			BootstrapVersion: 2,
 			PeerRecoveryStates: []api.PeerRecoveryState{{
-				PeerNodeID:     "node-b",
-				Blocked:        true,
-				BlockReason:    "suppressed_timeout_budget",
-				BlockedUntil:   time.Now().UTC().Add(30 * time.Second),
-				NextProbeAt:    time.Now().UTC().Add(10 * time.Second),
-				ProbeLimited:   true,
-				ProbeBudget:    2,
-				ProbeFailures:  1,
-				ProbeRemaining: 1,
-				ProbeRefillAt:  time.Now().UTC().Add(40 * time.Second),
+				PeerNodeID:                 "node-b",
+				Blocked:                    true,
+				BlockReason:                "suppressed_timeout_budget",
+				BlockedUntil:               time.Now().UTC().Add(30 * time.Second),
+				NextProbeAt:                time.Now().UTC().Add(10 * time.Second),
+				ProbeLimited:               true,
+				ProbeBudget:                2,
+				ProbeFailures:              1,
+				ProbeRemaining:             1,
+				ProbeRefillAt:              time.Now().UTC().Add(40 * time.Second),
+				LastIssuedAttemptID:        "attempt-node-1-node-b-1",
+				LastIssuedAttemptReason:    "relay_active",
+				LastIssuedAttemptAt:        time.Now().UTC().Add(-2 * time.Second),
+				LastIssuedAttemptExecuteAt: time.Now().UTC().Add(-1500 * time.Millisecond),
 			}},
 		}); err != nil {
 			t.Fatalf("encode heartbeat response: %v", err)
@@ -627,6 +631,9 @@ func TestSendHeartbeatIncludesPeerTransportStates(t *testing.T) {
 	}
 	if recoveryStates[0].ProbeRefillAt.IsZero() {
 		t.Fatalf("expected persisted recovery probe refill time, got %#v", recoveryStates)
+	}
+	if recoveryStates[0].LastIssuedAttemptID == "" || recoveryStates[0].LastIssuedAttemptReason == "" || recoveryStates[0].LastIssuedAttemptAt.IsZero() || recoveryStates[0].LastIssuedAttemptExecuteAt.IsZero() {
+		t.Fatalf("expected persisted recovery state to include latest issued attempt trace, got %#v", recoveryStates)
 	}
 
 	transportCancel()
@@ -1482,6 +1489,7 @@ func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) 
 		{
 			AttemptID:     "attempt-agent-success",
 			PeerNodeID:    "node-b",
+			IssuedAt:      time.Now().UTC().Add(-50 * time.Millisecond),
 			ExecuteAt:     time.Now().UTC(),
 			Window:        400,
 			BurstInterval: 50,
@@ -1514,6 +1522,9 @@ func TestScheduleDirectAttemptsExecutesAndPersistsTransportReport(t *testing.T) 
 	}
 	if len(report.Entries) != 1 || report.Entries[0].AttemptID != "attempt-agent-success" || report.Entries[0].Status != "completed" || report.Entries[0].Result != "success" {
 		t.Fatalf("expected completed direct attempt report entry, got %#v", report)
+	}
+	if report.Entries[0].IssuedAt.IsZero() {
+		t.Fatalf("expected direct attempt report entry to retain issued_at, got %#v", report.Entries[0])
 	}
 
 	cancel()
@@ -1577,6 +1588,7 @@ func TestScheduleDirectAttemptsPersistsWithoutTransportAndRestoresLater(t *testi
 	instruction := api.DirectAttemptInstruction{
 		AttemptID:     "attempt-agent-restore",
 		PeerNodeID:    "node-b",
+		IssuedAt:      time.Now().UTC().Add(-50 * time.Millisecond),
 		ExecuteAt:     time.Now().UTC().Add(150 * time.Millisecond),
 		Window:        800,
 		BurstInterval: 50,

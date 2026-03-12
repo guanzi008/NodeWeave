@@ -421,6 +421,9 @@ func TestSQLiteStorePersistsNATSummaryAndSchedulesDirectAttempt(t *testing.T) {
 	if len(hbResp.DirectAttempts) == 0 {
 		t.Fatal("expected coordinated direct attempt for node b")
 	}
+	if hbResp.DirectAttempts[0].IssuedAt.IsZero() || hbResp.DirectAttempts[0].ExecuteAt.IsZero() {
+		t.Fatalf("expected direct attempt to include issued/execute timestamps, got %#v", hbResp.DirectAttempts)
+	}
 
 	bootstrap, err := dataStore.GetBootstrap(nodeA.Node.ID, nodeA.NodeToken)
 	if err != nil {
@@ -431,6 +434,9 @@ func TestSQLiteStorePersistsNATSummaryAndSchedulesDirectAttempt(t *testing.T) {
 	}
 	if bootstrap.Peers[0].NATMappingBehavior != "varying_port" || !bootstrap.Peers[0].NATReachable || bootstrap.Peers[0].NATReportedAt.IsZero() {
 		t.Fatalf("expected NAT summary on bootstrap peer, got %#v", bootstrap.Peers[0])
+	}
+	if bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptID == "" || bootstrap.Peers[0].ObservedDirectRecoveryLastIssuedAttemptReason == "" {
+		t.Fatalf("expected bootstrap peer to expose latest issued direct attempt trace, got %#v", bootstrap.Peers[0])
 	}
 	if bootstrap.Peers[0].ObservedTransportKind != "" {
 		t.Fatalf("expected no observed transport summary from peer without report, got %#v", bootstrap.Peers[0])

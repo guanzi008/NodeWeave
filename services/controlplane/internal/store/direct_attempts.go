@@ -229,6 +229,7 @@ type directAttemptPair struct {
 	NodeBID         string
 	NodeACandidates []string
 	NodeBCandidates []string
+	IssuedAt        time.Time
 	ExecuteAt       time.Time
 	Window          time.Duration
 	BurstInterval   time.Duration
@@ -278,6 +279,7 @@ func (p directAttemptPair) instructionFor(nodeID string) (api.DirectAttemptInstr
 	return api.DirectAttemptInstruction{
 		AttemptID:     p.AttemptID,
 		PeerNodeID:    peerNodeID,
+		IssuedAt:      p.IssuedAt,
 		ExecuteAt:     p.ExecuteAt,
 		Window:        p.Window.Milliseconds(),
 		BurstInterval: p.BurstInterval.Milliseconds(),
@@ -752,12 +754,20 @@ func directAttemptBlockStateWithPolicy(state api.PeerTransportState, now time.Ti
 	return laterBlockState(cooldownState, suppressionState)
 }
 
-func recoveryStateForPeer(peerNodeID string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy) api.PeerRecoveryState {
+func applyDirectAttemptTrace(recoveryState api.PeerRecoveryState, attempt directAttemptPair) api.PeerRecoveryState {
+	recoveryState.LastIssuedAttemptID = strings.TrimSpace(attempt.AttemptID)
+	recoveryState.LastIssuedAttemptReason = strings.TrimSpace(attempt.Reason)
+	recoveryState.LastIssuedAttemptAt = attempt.IssuedAt
+	recoveryState.LastIssuedAttemptExecuteAt = attempt.ExecuteAt
+	return recoveryState
+}
+
+func recoveryStateForPeer(peerNodeID string, selfState, peerState api.PeerTransportState, now time.Time, policy directAttemptPolicy, latestAttempt *directAttemptPair) api.PeerRecoveryState {
 	block := laterBlockState(
 		directAttemptBlockStateWithPolicy(selfState, now, policy),
 		directAttemptBlockStateWithPolicy(peerState, now, policy),
 	)
-	return api.PeerRecoveryState{
+	recoveryState := api.PeerRecoveryState{
 		PeerNodeID:     strings.TrimSpace(peerNodeID),
 		Blocked:        block.Blocked,
 		BlockReason:    block.Reason,
@@ -769,6 +779,10 @@ func recoveryStateForPeer(peerNodeID string, selfState, peerState api.PeerTransp
 		ProbeRemaining: block.ProbeRemaining,
 		ProbeRefillAt:  block.ProbeRefillAt,
 	}
+	if latestAttempt != nil {
+		recoveryState = applyDirectAttemptTrace(recoveryState, *latestAttempt)
+	}
+	return recoveryState
 }
 
 func laterBlockState(left, right directAttemptBlockState) directAttemptBlockState {
@@ -943,6 +957,7 @@ func newDirectAttemptPair(now time.Time, nodeA api.Node, nodeB api.Node, nodeACa
 		NodeBID:         nodeB.ID,
 		NodeACandidates: dedupeStrings(nodeACandidates),
 		NodeBCandidates: dedupeStrings(nodeBCandidates),
+		IssuedAt:        now,
 		ExecuteAt:       executeAt,
 		Window:          window,
 		BurstInterval:   burstInterval,

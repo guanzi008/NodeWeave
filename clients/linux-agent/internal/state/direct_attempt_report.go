@@ -16,6 +16,7 @@ type DirectAttemptReport struct {
 type DirectAttemptReportEntry struct {
 	AttemptID      string    `json:"attempt_id"`
 	PeerNodeID     string    `json:"peer_node_id"`
+	IssuedAt       time.Time `json:"issued_at,omitempty"`
 	ExecuteAt      time.Time `json:"execute_at,omitempty"`
 	Window         int64     `json:"window,omitempty"`
 	BurstInterval  int64     `json:"burst_interval,omitempty"`

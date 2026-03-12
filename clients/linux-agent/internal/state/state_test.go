@@ -322,6 +322,7 @@ func TestSaveAndLoadDirectAttemptReport(t *testing.T) {
 			{
 				AttemptID:      "attempt-1",
 				PeerNodeID:     "node_2",
+				IssuedAt:       time.Now().UTC().Add(-1 * time.Second),
 				ExecuteAt:      time.Now().UTC().Add(5 * time.Second),
 				Status:         "waiting_transport",
 				Result:         "queued",

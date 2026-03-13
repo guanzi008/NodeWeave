@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 
+#include "LocalDeviceInventory.h"
+
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QFile>
@@ -38,10 +40,13 @@ MainWindow::MainWindow(QWidget *parent)
       m_registerButton(nullptr),
       m_serialNodeIdEdit(nullptr),
       m_serialPeerNodeIdEdit(nullptr),
+      m_serialDetectedCombo(nullptr),
       m_serialLocalPortEdit(nullptr),
       m_serialRemotePortEdit(nullptr),
       m_serialBaudRateEdit(nullptr),
       m_serialTransportEdit(nullptr),
+      m_serialDetectButton(nullptr),
+      m_serialUseDetectedButton(nullptr),
       m_serialAddButton(nullptr),
       m_serialRemoveButton(nullptr),
       m_serialExportButton(nullptr),
@@ -50,8 +55,10 @@ MainWindow::MainWindow(QWidget *parent)
       m_serialTable(nullptr),
       m_serialJsonText(nullptr),
       m_serialReportText(nullptr),
+      m_serialRuleText(nullptr),
       m_usbNodeIdEdit(nullptr),
       m_usbPeerNodeIdEdit(nullptr),
+      m_usbDetectedCombo(nullptr),
       m_usbLocalBusEdit(nullptr),
       m_usbLocalDeviceEdit(nullptr),
       m_usbLocalVendorEdit(nullptr),
@@ -63,6 +70,8 @@ MainWindow::MainWindow(QWidget *parent)
       m_usbRemoteProductEdit(nullptr),
       m_usbRemoteInterfaceEdit(nullptr),
       m_usbTransportEdit(nullptr),
+      m_usbDetectButton(nullptr),
+      m_usbUseDetectedButton(nullptr),
       m_usbAddButton(nullptr),
       m_usbRemoveButton(nullptr),
       m_usbExportButton(nullptr),
@@ -71,6 +80,7 @@ MainWindow::MainWindow(QWidget *parent)
       m_usbTable(nullptr),
       m_usbJsonText(nullptr),
       m_usbReportText(nullptr),
+      m_usbRuleText(nullptr),
       m_nodesTable(nullptr),
       m_overviewText(nullptr),
       m_logText(nullptr),
@@ -191,12 +201,15 @@ void MainWindow::buildUi() {
     auto *serialForm = new QFormLayout();
     m_serialNodeIdEdit = new QLineEdit(serialTab);
     m_serialPeerNodeIdEdit = new QLineEdit(serialTab);
+    m_serialDetectedCombo = new QComboBox(serialTab);
     m_serialLocalPortEdit = new QLineEdit(serialTab);
     m_serialRemotePortEdit = new QLineEdit(serialTab);
     m_serialBaudRateEdit = new QLineEdit(serialTab);
     m_serialTransportEdit = new QLineEdit(serialTab);
     m_serialBaudRateEdit->setText(QStringLiteral("115200"));
     m_serialTransportEdit->setText(QStringLiteral("tcp-encap"));
+    m_serialDetectButton = new QPushButton(QStringLiteral("扫描本机串口"), serialTab);
+    m_serialUseDetectedButton = new QPushButton(QStringLiteral("使用选中串口"), serialTab);
     m_serialAddButton = new QPushButton(QStringLiteral("Add Serial Mapping"), serialTab);
     m_serialRemoveButton = new QPushButton(QStringLiteral("Remove Selected"), serialTab);
     m_serialExportButton = new QPushButton(QStringLiteral("Export JSON"), serialTab);
@@ -219,7 +232,14 @@ void MainWindow::buildUi() {
     m_serialJsonText->setReadOnly(true);
     m_serialReportText = new QPlainTextEdit(serialTab);
     m_serialReportText->setReadOnly(true);
+    m_serialRuleText = new QPlainTextEdit(serialTab);
+    m_serialRuleText->setReadOnly(true);
 
+    auto *serialDiscoveryRow = new QHBoxLayout();
+    serialDiscoveryRow->addWidget(new QLabel(QStringLiteral("本机串口"), serialTab));
+    serialDiscoveryRow->addWidget(m_serialDetectedCombo, 1);
+    serialDiscoveryRow->addWidget(m_serialDetectButton);
+    serialDiscoveryRow->addWidget(m_serialUseDetectedButton);
     serialForm->addRow(QStringLiteral("Node ID"), m_serialNodeIdEdit);
     serialForm->addRow(QStringLiteral("Peer Node ID"), m_serialPeerNodeIdEdit);
     serialForm->addRow(QStringLiteral("Local Port"), m_serialLocalPortEdit);
@@ -232,9 +252,12 @@ void MainWindow::buildUi() {
     serialButtons->addWidget(m_serialExportButton);
     serialButtons->addWidget(m_serialImportButton);
     serialButtons->addWidget(m_serialLoadReportButton);
+    serialLayout->addLayout(serialDiscoveryRow);
     serialLayout->addLayout(serialForm);
     serialLayout->addLayout(serialButtons);
     serialLayout->addWidget(m_serialTable, 2);
+    serialLayout->addWidget(new QLabel(QStringLiteral("串口驱动 / 规则"), serialTab));
+    serialLayout->addWidget(m_serialRuleText, 1);
     serialLayout->addWidget(new QLabel(QStringLiteral("Serial JSON"), serialTab));
     serialLayout->addWidget(m_serialJsonText, 1);
     serialLayout->addWidget(new QLabel(QStringLiteral("Serial Report"), serialTab));
@@ -245,6 +268,7 @@ void MainWindow::buildUi() {
     auto *usbForm = new QGridLayout();
     m_usbNodeIdEdit = new QLineEdit(usbTab);
     m_usbPeerNodeIdEdit = new QLineEdit(usbTab);
+    m_usbDetectedCombo = new QComboBox(usbTab);
     m_usbLocalBusEdit = new QLineEdit(usbTab);
     m_usbLocalDeviceEdit = new QLineEdit(usbTab);
     m_usbLocalVendorEdit = new QLineEdit(usbTab);
@@ -257,6 +281,8 @@ void MainWindow::buildUi() {
     m_usbRemoteInterfaceEdit = new QLineEdit(usbTab);
     m_usbTransportEdit = new QLineEdit(usbTab);
     m_usbTransportEdit->setText(QStringLiteral("usbip-encap"));
+    m_usbDetectButton = new QPushButton(QStringLiteral("扫描本机 USB"), usbTab);
+    m_usbUseDetectedButton = new QPushButton(QStringLiteral("使用选中设备"), usbTab);
     m_usbAddButton = new QPushButton(QStringLiteral("Add USB Mapping"), usbTab);
     m_usbRemoveButton = new QPushButton(QStringLiteral("Remove Selected"), usbTab);
     m_usbExportButton = new QPushButton(QStringLiteral("Export JSON"), usbTab);
@@ -278,7 +304,14 @@ void MainWindow::buildUi() {
     m_usbJsonText->setReadOnly(true);
     m_usbReportText = new QPlainTextEdit(usbTab);
     m_usbReportText->setReadOnly(true);
+    m_usbRuleText = new QPlainTextEdit(usbTab);
+    m_usbRuleText->setReadOnly(true);
 
+    auto *usbDiscoveryRow = new QHBoxLayout();
+    usbDiscoveryRow->addWidget(new QLabel(QStringLiteral("本机 USB"), usbTab));
+    usbDiscoveryRow->addWidget(m_usbDetectedCombo, 1);
+    usbDiscoveryRow->addWidget(m_usbDetectButton);
+    usbDiscoveryRow->addWidget(m_usbUseDetectedButton);
     int row = 0;
     usbForm->addWidget(new QLabel(QStringLiteral("Node ID"), usbTab), row, 0);
     usbForm->addWidget(m_usbNodeIdEdit, row, 1);
@@ -319,9 +352,12 @@ void MainWindow::buildUi() {
     usbButtons->addWidget(m_usbExportButton);
     usbButtons->addWidget(m_usbImportButton);
     usbButtons->addWidget(m_usbLoadReportButton);
+    usbLayout->addLayout(usbDiscoveryRow);
     usbLayout->addLayout(usbForm);
     usbLayout->addLayout(usbButtons);
     usbLayout->addWidget(m_usbTable, 2);
+    usbLayout->addWidget(new QLabel(QStringLiteral("USB 驱动 / 规则"), usbTab));
+    usbLayout->addWidget(m_usbRuleText, 1);
     usbLayout->addWidget(new QLabel(QStringLiteral("USB JSON"), usbTab));
     usbLayout->addWidget(m_usbJsonText, 1);
     usbLayout->addWidget(new QLabel(QStringLiteral("USB Report"), usbTab));
@@ -363,6 +399,24 @@ void MainWindow::wireSignals() {
     connect(m_registerButton, &QPushButton::clicked, this, [this]() {
         m_client->setBaseUrl(QUrl::fromUserInput(m_serverUrlEdit->text().trimmed()));
         m_client->registerDevice(buildRegistrationPayload());
+    });
+    connect(m_serialDetectButton, &QPushButton::clicked, this, [this]() {
+        refreshLocalSerialDevices();
+    });
+    connect(m_serialUseDetectedButton, &QPushButton::clicked, this, [this]() {
+        applySelectedSerialDevice(false);
+    });
+    connect(m_serialDetectedCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+        updateSerialRulePreview();
+    });
+    connect(m_usbDetectButton, &QPushButton::clicked, this, [this]() {
+        refreshLocalUsbDevices();
+    });
+    connect(m_usbUseDetectedButton, &QPushButton::clicked, this, [this]() {
+        applySelectedUsbDevice(false);
+    });
+    connect(m_usbDetectedCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+        updateUsbRulePreview();
     });
     connect(m_exportLinuxAgentButton, &QPushButton::clicked, this, [this]() {
         exportAgentConfigSnippet(QStringLiteral("linux-agent"), QStringLiteral("linux-agent-forwarding.snippet.json"));
@@ -490,6 +544,8 @@ void MainWindow::loadSettings() {
     m_usbTransportEdit->setText(m_settings.value(QStringLiteral("usbTransport"), QStringLiteral("usbip-encap")).toString());
 
     loadForwardingSettings();
+    refreshLocalSerialDevices();
+    refreshLocalUsbDevices();
 
     m_client->setBaseUrl(QUrl::fromUserInput(serverUrl));
     m_client->setAccessToken(m_tokenEdit->text().trimmed());
@@ -542,6 +598,111 @@ void MainWindow::appendLog(const QString &line) {
                                     .arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate))
                                     .arg(line);
     m_logText->appendPlainText(timestamped);
+}
+
+void MainWindow::refreshLocalSerialDevices() {
+    m_localSerialDevices = LocalDeviceInventory::enumerateSerialDevices();
+    m_serialDetectedCombo->clear();
+    for (const QJsonValue &value : m_localSerialDevices) {
+        const QJsonObject object = value.toObject();
+        m_serialDetectedCombo->addItem(object.value(QStringLiteral("display_name")).toString(), object);
+    }
+    updateSerialRulePreview();
+    applySelectedSerialDevice(true);
+    appendLog(QStringLiteral("扫描到 %1 个本机串口设备").arg(m_localSerialDevices.size()));
+}
+
+void MainWindow::refreshLocalUsbDevices() {
+    m_localUsbDevices = LocalDeviceInventory::enumerateUsbDevices();
+    m_usbDetectedCombo->clear();
+    for (const QJsonValue &value : m_localUsbDevices) {
+        const QJsonObject object = value.toObject();
+        m_usbDetectedCombo->addItem(object.value(QStringLiteral("display_name")).toString(), object);
+    }
+    updateUsbRulePreview();
+    applySelectedUsbDevice(true);
+    appendLog(QStringLiteral("扫描到 %1 个本机 USB 设备").arg(m_localUsbDevices.size()));
+}
+
+void MainWindow::applySelectedSerialDevice(bool onlyIfEmpty) {
+    if (m_serialDetectedCombo->currentIndex() < 0) {
+        updateSerialRulePreview();
+        return;
+    }
+    if (onlyIfEmpty && !m_serialLocalPortEdit->text().trimmed().isEmpty()) {
+        updateSerialRulePreview();
+        return;
+    }
+    const QJsonObject object = m_serialDetectedCombo->currentData().toJsonObject();
+    m_serialLocalPortEdit->setText(object.value(QStringLiteral("port_name")).toString());
+    if (onlyIfEmpty && m_serialBaudRateEdit->text().trimmed().isEmpty()) {
+        m_serialBaudRateEdit->setText(QString::number(object.value(QStringLiteral("suggested_baud_rate")).toInt(115200)));
+    } else if (!onlyIfEmpty) {
+        m_serialBaudRateEdit->setText(QString::number(object.value(QStringLiteral("suggested_baud_rate")).toInt(115200)));
+    }
+    if (onlyIfEmpty && m_serialTransportEdit->text().trimmed().isEmpty()) {
+        m_serialTransportEdit->setText(object.value(QStringLiteral("transport")).toString(QStringLiteral("tcp-encap")));
+    } else if (!onlyIfEmpty) {
+        m_serialTransportEdit->setText(object.value(QStringLiteral("transport")).toString(QStringLiteral("tcp-encap")));
+    }
+    updateSerialRulePreview();
+}
+
+void MainWindow::applySelectedUsbDevice(bool onlyIfEmpty) {
+    if (m_usbDetectedCombo->currentIndex() < 0) {
+        updateUsbRulePreview();
+        return;
+    }
+    if (onlyIfEmpty && (!m_usbLocalVendorEdit->text().trimmed().isEmpty() || !m_usbLocalBusEdit->text().trimmed().isEmpty())) {
+        updateUsbRulePreview();
+        return;
+    }
+    const QJsonObject object = m_usbDetectedCombo->currentData().toJsonObject();
+    m_usbLocalBusEdit->setText(object.value(QStringLiteral("bus_id")).toString());
+    m_usbLocalDeviceEdit->setText(object.value(QStringLiteral("device_id")).toString());
+    m_usbLocalVendorEdit->setText(object.value(QStringLiteral("vendor_id")).toString());
+    m_usbLocalProductEdit->setText(object.value(QStringLiteral("product_id")).toString());
+    m_usbLocalInterfaceEdit->setText(object.value(QStringLiteral("interface")).toString());
+    if (onlyIfEmpty && m_usbTransportEdit->text().trimmed().isEmpty()) {
+        m_usbTransportEdit->setText(object.value(QStringLiteral("transport")).toString(QStringLiteral("usbip-encap")));
+    } else if (!onlyIfEmpty) {
+        m_usbTransportEdit->setText(object.value(QStringLiteral("transport")).toString(QStringLiteral("usbip-encap")));
+    }
+    updateUsbRulePreview();
+}
+
+void MainWindow::updateSerialRulePreview() {
+    if (m_serialDetectedCombo->currentIndex() < 0) {
+        m_serialRuleText->clear();
+        return;
+    }
+    const QJsonObject object = m_serialDetectedCombo->currentData().toJsonObject();
+    const QJsonObject preview{
+        {QStringLiteral("display_name"), object.value(QStringLiteral("display_name")).toString()},
+        {QStringLiteral("port_name"), object.value(QStringLiteral("port_name")).toString()},
+        {QStringLiteral("driver"), object.value(QStringLiteral("driver")).toString()},
+        {QStringLiteral("transport"), object.value(QStringLiteral("transport")).toString()},
+        {QStringLiteral("suggested_baud_rate"), object.value(QStringLiteral("suggested_baud_rate")).toInt()},
+        {QStringLiteral("rule"), object.value(QStringLiteral("rule")).toString()},
+    };
+    m_serialRuleText->setPlainText(QString::fromUtf8(QJsonDocument(preview).toJson(QJsonDocument::Indented)));
+}
+
+void MainWindow::updateUsbRulePreview() {
+    if (m_usbDetectedCombo->currentIndex() < 0) {
+        m_usbRuleText->clear();
+        return;
+    }
+    const QJsonObject object = m_usbDetectedCombo->currentData().toJsonObject();
+    const QJsonObject preview{
+        {QStringLiteral("display_name"), object.value(QStringLiteral("display_name")).toString()},
+        {QStringLiteral("vendor_id"), object.value(QStringLiteral("vendor_id")).toString()},
+        {QStringLiteral("product_id"), object.value(QStringLiteral("product_id")).toString()},
+        {QStringLiteral("driver"), object.value(QStringLiteral("driver")).toString()},
+        {QStringLiteral("transport"), object.value(QStringLiteral("transport")).toString()},
+        {QStringLiteral("rule"), object.value(QStringLiteral("rule")).toString()},
+    };
+    m_usbRuleText->setPlainText(QString::fromUtf8(QJsonDocument(preview).toJson(QJsonDocument::Indented)));
 }
 
 void MainWindow::updateNodesTable(const QJsonArray &items) {

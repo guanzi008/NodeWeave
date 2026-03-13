@@ -19,6 +19,8 @@ set(NODEWEAVE_DESKTOP_SOURCES
     src/MainWindow.h
     src/ControlPlaneClient.cpp
     src/ControlPlaneClient.h
+    src/LocalDeviceInventory.cpp
+    src/LocalDeviceInventory.h
 )
 
 add_executable(nodeweave-desktop

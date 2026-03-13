@@ -51,7 +51,7 @@ Status: Active Baseline
 | 内部 DNS | 节点命名、服务发现、权威解析 | 只有模型，未成品化 | `services/controlplane`、文档 | MagicDNS 风格命名与缓存策略 |
 | ACL / 审计 | 企业级策略、命中追踪、流量审计 | 仍未落地成主链路 | 文档和任务拆分为主 | Tailscale ACL / Nebula policy |
 | 网关桥接 | WireGuard / ZeroTier / EasyTier / Tailscale 互通 | 还未开始 | `gateways` 目录仍为空壳 | 各项目的边界网关能力 |
-| USB / 串口 | 远程设备转发 | 串口 / USB 基础层已开始，Linux/Windows agent 已落 forwarding 状态文件，Qt GUI 已能编辑和导出配置片段 | `packages/runtime/go/forwarding/serial`、`packages/runtime/go/forwarding/usb`、`clients/desktop-qt` | usbip、libusb |
+| USB / 串口 | 远程设备转发 | 串口 / USB 基础层已开始，Linux/Windows agent 已落 forwarding 状态文件，Qt GUI 已能扫描本机设备、提示驱动规则并导入导出配置片段 | `packages/runtime/go/forwarding/serial`、`packages/runtime/go/forwarding/usb`、`clients/desktop-qt` | usbip、libusb |
 | Windows/macOS/mobile | 多平台客户端 | Windows CLI/agent 骨架与 Qt 桌面 GUI 已开始 | `clients/windows-agent`、`clients/windows-cli`、`clients/desktop-qt`，其余平台仍为空壳 | 平台壳层和系统网络扩展 |
 
 ## 5. 后续开发时必须持续遵守的约束

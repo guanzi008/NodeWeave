@@ -15,6 +15,9 @@
 - 设备注册
 - 串口转发映射编辑
 - USB 转发映射编辑
+- 本机串口自动扫描与回填
+- 本机 USB 自动扫描与回填
+- 驱动提示与内置规则建议
 - Linux / Windows agent forwarding snippet 导出
 - Linux / Windows agent forwarding snippet 导入
 - 串口 / USB forwarding report 本地查看
@@ -51,5 +54,7 @@ cmake --build build/desktop-qt -j
 
 - 当前只接控制面 REST API，不直接接 secure-udp 数据面
 - 当前没有 `.ui` 文件，界面全由 C++ 代码构建
-- 串口 / USB 标签页当前编辑的是 forwarding 配置、agent snippet 导入导出和本地 report 查看，不直接枚举本机硬件
+- 串口标签页会自动扫描本机串口设备，并根据当前驱动给出中文规则建议
+- USB 标签页会自动扫描本机 USB 设备，并显示驱动/类别对应的转发建议
+- 当前串口 / USB 规则是内置启发式规则，不等同于完整驱动兼容矩阵
 - 当前没有打包脚本，先保证开发态构建和运行

@@ -2,6 +2,7 @@
 
 #include "ControlPlaneClient.h"
 
+#include <QComboBox>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLineEdit>
@@ -30,6 +31,12 @@ private:
     void saveForwardingSettings();
     void appendLog(const QString &line);
     void updateNodesTable(const QJsonArray &items);
+    void refreshLocalSerialDevices();
+    void refreshLocalUsbDevices();
+    void applySelectedSerialDevice(bool onlyIfEmpty = false);
+    void applySelectedUsbDevice(bool onlyIfEmpty = false);
+    void updateSerialRulePreview();
+    void updateUsbRulePreview();
     void refreshSerialTable();
     void refreshUsbTable();
     void syncForwardingPreview(QPlainTextEdit *editor, const QJsonArray &entries);
@@ -71,10 +78,13 @@ private:
 
     QLineEdit *m_serialNodeIdEdit;
     QLineEdit *m_serialPeerNodeIdEdit;
+    QComboBox *m_serialDetectedCombo;
     QLineEdit *m_serialLocalPortEdit;
     QLineEdit *m_serialRemotePortEdit;
     QLineEdit *m_serialBaudRateEdit;
     QLineEdit *m_serialTransportEdit;
+    QPushButton *m_serialDetectButton;
+    QPushButton *m_serialUseDetectedButton;
     QPushButton *m_serialAddButton;
     QPushButton *m_serialRemoveButton;
     QPushButton *m_serialExportButton;
@@ -83,9 +93,11 @@ private:
     QTableWidget *m_serialTable;
     QPlainTextEdit *m_serialJsonText;
     QPlainTextEdit *m_serialReportText;
+    QPlainTextEdit *m_serialRuleText;
 
     QLineEdit *m_usbNodeIdEdit;
     QLineEdit *m_usbPeerNodeIdEdit;
+    QComboBox *m_usbDetectedCombo;
     QLineEdit *m_usbLocalBusEdit;
     QLineEdit *m_usbLocalDeviceEdit;
     QLineEdit *m_usbLocalVendorEdit;
@@ -97,6 +109,8 @@ private:
     QLineEdit *m_usbRemoteProductEdit;
     QLineEdit *m_usbRemoteInterfaceEdit;
     QLineEdit *m_usbTransportEdit;
+    QPushButton *m_usbDetectButton;
+    QPushButton *m_usbUseDetectedButton;
     QPushButton *m_usbAddButton;
     QPushButton *m_usbRemoveButton;
     QPushButton *m_usbExportButton;
@@ -105,6 +119,7 @@ private:
     QTableWidget *m_usbTable;
     QPlainTextEdit *m_usbJsonText;
     QPlainTextEdit *m_usbReportText;
+    QPlainTextEdit *m_usbRuleText;
 
     QTableWidget *m_nodesTable;
     QPlainTextEdit *m_overviewText;
@@ -117,4 +132,6 @@ private:
 
     QJsonArray m_serialEntries;
     QJsonArray m_usbEntries;
+    QJsonArray m_localSerialDevices;
+    QJsonArray m_localUsbDevices;
 };

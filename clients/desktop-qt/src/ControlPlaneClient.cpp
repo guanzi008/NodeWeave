@@ -21,7 +21,7 @@ QString extractErrorMessage(const QJsonObject &payload) {
     if (!error.isEmpty()) {
         return error;
     }
-    return QStringLiteral("request failed");
+    return QStringLiteral("请求失败");
 }
 
 } // namespace
@@ -101,7 +101,7 @@ void ControlPlaneClient::sendJsonRequest(HttpMethod method,
 
         if (reply->error() != QNetworkReply::NoError || statusCode >= 400) {
             QString message = extractErrorMessage(payload);
-            if (message == QStringLiteral("request failed")) {
+            if (message == QStringLiteral("请求失败")) {
                 message = reply->errorString();
             }
             Q_EMIT requestFailed(operation, message, statusCode);

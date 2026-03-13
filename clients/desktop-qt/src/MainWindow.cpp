@@ -92,7 +92,7 @@ MainWindow::MainWindow(QWidget *parent)
     buildUi();
     loadSettings();
     wireSignals();
-    statusBar()->showMessage(QStringLiteral("Ready"));
+    statusBar()->showMessage(QStringLiteral("就绪"));
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
@@ -101,7 +101,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 }
 
 void MainWindow::buildUi() {
-    setWindowTitle(QStringLiteral("NodeWeave Desktop"));
+    setWindowTitle(QStringLiteral("NodeWeave 桌面客户端"));
     resize(1360, 900);
 
     QWidget *central = new QWidget(this);
@@ -109,7 +109,7 @@ void MainWindow::buildUi() {
     rootLayout->setContentsMargins(12, 12, 12, 12);
     rootLayout->setSpacing(12);
 
-    auto *connectionGroup = new QGroupBox(QStringLiteral("Control Plane"), central);
+    auto *connectionGroup = new QGroupBox(QStringLiteral("控制面"), central);
     auto *connectionLayout = new QGridLayout(connectionGroup);
 
     m_serverUrlEdit = new QLineEdit(connectionGroup);
@@ -117,17 +117,17 @@ void MainWindow::buildUi() {
     m_passwordEdit = new QLineEdit(connectionGroup);
     m_passwordEdit->setEchoMode(QLineEdit::Password);
     m_tokenEdit = new QLineEdit(connectionGroup);
-    m_healthButton = new QPushButton(QStringLiteral("Health"), connectionGroup);
-    m_loginButton = new QPushButton(QStringLiteral("Login"), connectionGroup);
-    m_nodesButton = new QPushButton(QStringLiteral("Refresh Nodes"), connectionGroup);
+    m_healthButton = new QPushButton(QStringLiteral("健康检查"), connectionGroup);
+    m_loginButton = new QPushButton(QStringLiteral("登录"), connectionGroup);
+    m_nodesButton = new QPushButton(QStringLiteral("刷新节点"), connectionGroup);
 
-    connectionLayout->addWidget(new QLabel(QStringLiteral("Server URL"), connectionGroup), 0, 0);
+    connectionLayout->addWidget(new QLabel(QStringLiteral("服务器地址"), connectionGroup), 0, 0);
     connectionLayout->addWidget(m_serverUrlEdit, 0, 1, 1, 3);
-    connectionLayout->addWidget(new QLabel(QStringLiteral("Email"), connectionGroup), 1, 0);
+    connectionLayout->addWidget(new QLabel(QStringLiteral("邮箱"), connectionGroup), 1, 0);
     connectionLayout->addWidget(m_emailEdit, 1, 1);
-    connectionLayout->addWidget(new QLabel(QStringLiteral("Password"), connectionGroup), 1, 2);
+    connectionLayout->addWidget(new QLabel(QStringLiteral("密码"), connectionGroup), 1, 2);
     connectionLayout->addWidget(m_passwordEdit, 1, 3);
-    connectionLayout->addWidget(new QLabel(QStringLiteral("Access Token"), connectionGroup), 2, 0);
+    connectionLayout->addWidget(new QLabel(QStringLiteral("访问令牌"), connectionGroup), 2, 0);
     connectionLayout->addWidget(m_tokenEdit, 2, 1, 1, 3);
     connectionLayout->addWidget(m_healthButton, 3, 1);
     connectionLayout->addWidget(m_loginButton, 3, 2);
@@ -142,18 +142,18 @@ void MainWindow::buildUi() {
     m_logText = new QPlainTextEdit(overviewTab);
     m_logText->setReadOnly(true);
     auto *exportButtons = new QHBoxLayout();
-    m_exportLinuxAgentButton = new QPushButton(QStringLiteral("Export Linux Agent Snippet"), overviewTab);
-    m_exportWindowsAgentButton = new QPushButton(QStringLiteral("Export Windows Agent Snippet"), overviewTab);
-    m_importLinuxAgentButton = new QPushButton(QStringLiteral("Import Linux Agent Snippet"), overviewTab);
-    m_importWindowsAgentButton = new QPushButton(QStringLiteral("Import Windows Agent Snippet"), overviewTab);
+    m_exportLinuxAgentButton = new QPushButton(QStringLiteral("导出 Linux Agent 配置片段"), overviewTab);
+    m_exportWindowsAgentButton = new QPushButton(QStringLiteral("导出 Windows Agent 配置片段"), overviewTab);
+    m_importLinuxAgentButton = new QPushButton(QStringLiteral("导入 Linux Agent 配置片段"), overviewTab);
+    m_importWindowsAgentButton = new QPushButton(QStringLiteral("导入 Windows Agent 配置片段"), overviewTab);
     exportButtons->addWidget(m_exportLinuxAgentButton);
     exportButtons->addWidget(m_exportWindowsAgentButton);
     exportButtons->addWidget(m_importLinuxAgentButton);
     exportButtons->addWidget(m_importWindowsAgentButton);
-    overviewLayout->addWidget(new QLabel(QStringLiteral("Overview"), overviewTab));
+    overviewLayout->addWidget(new QLabel(QStringLiteral("概览"), overviewTab));
     overviewLayout->addWidget(m_overviewText, 2);
     overviewLayout->addLayout(exportButtons);
-    overviewLayout->addWidget(new QLabel(QStringLiteral("Event Log"), overviewTab));
+    overviewLayout->addWidget(new QLabel(QStringLiteral("事件日志"), overviewTab));
     overviewLayout->addWidget(m_logText, 1);
 
     QWidget *nodesTab = new QWidget(tabs);
@@ -161,13 +161,13 @@ void MainWindow::buildUi() {
     m_nodesTable = new QTableWidget(nodesTab);
     m_nodesTable->setColumnCount(7);
     m_nodesTable->setHorizontalHeaderLabels({
-        QStringLiteral("Node ID"),
-        QStringLiteral("Device ID"),
-        QStringLiteral("Overlay IP"),
-        QStringLiteral("Status"),
-        QStringLiteral("Relay Region"),
-        QStringLiteral("Last Seen"),
-        QStringLiteral("Endpoints"),
+        QStringLiteral("节点 ID"),
+        QStringLiteral("设备 ID"),
+        QStringLiteral("虚拟 IP"),
+        QStringLiteral("状态"),
+        QStringLiteral("Relay 区域"),
+        QStringLiteral("最后心跳"),
+        QStringLiteral("端点"),
     });
     m_nodesTable->horizontalHeader()->setStretchLastSection(true);
     m_nodesTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -182,16 +182,16 @@ void MainWindow::buildUi() {
     m_versionEdit = new QLineEdit(registrationTab);
     m_publicKeyEdit = new QLineEdit(registrationTab);
     m_capabilitiesEdit = new QLineEdit(registrationTab);
-    m_registerButton = new QPushButton(QStringLiteral("Register Device"), registrationTab);
+    m_registerButton = new QPushButton(QStringLiteral("注册设备"), registrationTab);
     m_registrationText = new QPlainTextEdit(registrationTab);
     m_registrationText->setReadOnly(true);
 
-    registrationForm->addRow(QStringLiteral("Registration Token"), m_registrationTokenEdit);
-    registrationForm->addRow(QStringLiteral("Device Name"), m_deviceNameEdit);
-    registrationForm->addRow(QStringLiteral("Platform"), m_platformEdit);
-    registrationForm->addRow(QStringLiteral("Version"), m_versionEdit);
-    registrationForm->addRow(QStringLiteral("Public Key"), m_publicKeyEdit);
-    registrationForm->addRow(QStringLiteral("Capabilities (CSV)"), m_capabilitiesEdit);
+    registrationForm->addRow(QStringLiteral("注册令牌"), m_registrationTokenEdit);
+    registrationForm->addRow(QStringLiteral("设备名称"), m_deviceNameEdit);
+    registrationForm->addRow(QStringLiteral("平台"), m_platformEdit);
+    registrationForm->addRow(QStringLiteral("版本"), m_versionEdit);
+    registrationForm->addRow(QStringLiteral("公钥"), m_publicKeyEdit);
+    registrationForm->addRow(QStringLiteral("能力列表（CSV）"), m_capabilitiesEdit);
     registrationLayout->addLayout(registrationForm);
     registrationLayout->addWidget(m_registerButton);
     registrationLayout->addWidget(m_registrationText, 1);
@@ -210,21 +210,21 @@ void MainWindow::buildUi() {
     m_serialTransportEdit->setText(QStringLiteral("tcp-encap"));
     m_serialDetectButton = new QPushButton(QStringLiteral("扫描本机串口"), serialTab);
     m_serialUseDetectedButton = new QPushButton(QStringLiteral("使用选中串口"), serialTab);
-    m_serialAddButton = new QPushButton(QStringLiteral("Add Serial Mapping"), serialTab);
-    m_serialRemoveButton = new QPushButton(QStringLiteral("Remove Selected"), serialTab);
-    m_serialExportButton = new QPushButton(QStringLiteral("Export JSON"), serialTab);
-    m_serialImportButton = new QPushButton(QStringLiteral("Import JSON"), serialTab);
-    m_serialLoadReportButton = new QPushButton(QStringLiteral("Load Report"), serialTab);
+    m_serialAddButton = new QPushButton(QStringLiteral("添加串口映射"), serialTab);
+    m_serialRemoveButton = new QPushButton(QStringLiteral("删除选中项"), serialTab);
+    m_serialExportButton = new QPushButton(QStringLiteral("导出 JSON"), serialTab);
+    m_serialImportButton = new QPushButton(QStringLiteral("导入 JSON"), serialTab);
+    m_serialLoadReportButton = new QPushButton(QStringLiteral("加载报告"), serialTab);
     m_serialTable = new QTableWidget(serialTab);
     m_serialTable->setColumnCount(7);
     m_serialTable->setHorizontalHeaderLabels({
-        QStringLiteral("Session ID"),
-        QStringLiteral("Node"),
-        QStringLiteral("Peer"),
-        QStringLiteral("Local"),
-        QStringLiteral("Remote"),
-        QStringLiteral("Baud"),
-        QStringLiteral("Transport"),
+        QStringLiteral("会话 ID"),
+        QStringLiteral("本端节点"),
+        QStringLiteral("对端节点"),
+        QStringLiteral("本地串口"),
+        QStringLiteral("远端串口"),
+        QStringLiteral("波特率"),
+        QStringLiteral("传输方式"),
     });
     m_serialTable->horizontalHeader()->setStretchLastSection(true);
     m_serialTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -240,12 +240,12 @@ void MainWindow::buildUi() {
     serialDiscoveryRow->addWidget(m_serialDetectedCombo, 1);
     serialDiscoveryRow->addWidget(m_serialDetectButton);
     serialDiscoveryRow->addWidget(m_serialUseDetectedButton);
-    serialForm->addRow(QStringLiteral("Node ID"), m_serialNodeIdEdit);
-    serialForm->addRow(QStringLiteral("Peer Node ID"), m_serialPeerNodeIdEdit);
-    serialForm->addRow(QStringLiteral("Local Port"), m_serialLocalPortEdit);
-    serialForm->addRow(QStringLiteral("Remote Port"), m_serialRemotePortEdit);
-    serialForm->addRow(QStringLiteral("Baud Rate"), m_serialBaudRateEdit);
-    serialForm->addRow(QStringLiteral("Transport"), m_serialTransportEdit);
+    serialForm->addRow(QStringLiteral("本端节点 ID"), m_serialNodeIdEdit);
+    serialForm->addRow(QStringLiteral("对端节点 ID"), m_serialPeerNodeIdEdit);
+    serialForm->addRow(QStringLiteral("本地串口"), m_serialLocalPortEdit);
+    serialForm->addRow(QStringLiteral("远端串口"), m_serialRemotePortEdit);
+    serialForm->addRow(QStringLiteral("波特率"), m_serialBaudRateEdit);
+    serialForm->addRow(QStringLiteral("传输方式"), m_serialTransportEdit);
     auto *serialButtons = new QHBoxLayout();
     serialButtons->addWidget(m_serialAddButton);
     serialButtons->addWidget(m_serialRemoveButton);
@@ -258,9 +258,9 @@ void MainWindow::buildUi() {
     serialLayout->addWidget(m_serialTable, 2);
     serialLayout->addWidget(new QLabel(QStringLiteral("串口驱动 / 规则"), serialTab));
     serialLayout->addWidget(m_serialRuleText, 1);
-    serialLayout->addWidget(new QLabel(QStringLiteral("Serial JSON"), serialTab));
+    serialLayout->addWidget(new QLabel(QStringLiteral("串口 JSON 配置"), serialTab));
     serialLayout->addWidget(m_serialJsonText, 1);
-    serialLayout->addWidget(new QLabel(QStringLiteral("Serial Report"), serialTab));
+    serialLayout->addWidget(new QLabel(QStringLiteral("串口报告"), serialTab));
     serialLayout->addWidget(m_serialReportText, 1);
 
     QWidget *usbTab = new QWidget(tabs);
@@ -281,22 +281,22 @@ void MainWindow::buildUi() {
     m_usbRemoteInterfaceEdit = new QLineEdit(usbTab);
     m_usbTransportEdit = new QLineEdit(usbTab);
     m_usbTransportEdit->setText(QStringLiteral("usbip-encap"));
-    m_usbDetectButton = new QPushButton(QStringLiteral("扫描本机 USB"), usbTab);
+    m_usbDetectButton = new QPushButton(QStringLiteral("扫描本机 USB 设备"), usbTab);
     m_usbUseDetectedButton = new QPushButton(QStringLiteral("使用选中设备"), usbTab);
-    m_usbAddButton = new QPushButton(QStringLiteral("Add USB Mapping"), usbTab);
-    m_usbRemoveButton = new QPushButton(QStringLiteral("Remove Selected"), usbTab);
-    m_usbExportButton = new QPushButton(QStringLiteral("Export JSON"), usbTab);
-    m_usbImportButton = new QPushButton(QStringLiteral("Import JSON"), usbTab);
-    m_usbLoadReportButton = new QPushButton(QStringLiteral("Load Report"), usbTab);
+    m_usbAddButton = new QPushButton(QStringLiteral("添加 USB 映射"), usbTab);
+    m_usbRemoveButton = new QPushButton(QStringLiteral("删除选中项"), usbTab);
+    m_usbExportButton = new QPushButton(QStringLiteral("导出 JSON"), usbTab);
+    m_usbImportButton = new QPushButton(QStringLiteral("导入 JSON"), usbTab);
+    m_usbLoadReportButton = new QPushButton(QStringLiteral("加载报告"), usbTab);
     m_usbTable = new QTableWidget(usbTab);
     m_usbTable->setColumnCount(6);
     m_usbTable->setHorizontalHeaderLabels({
-        QStringLiteral("Session ID"),
-        QStringLiteral("Node"),
-        QStringLiteral("Peer"),
-        QStringLiteral("Local Device"),
-        QStringLiteral("Remote Device"),
-        QStringLiteral("Transport"),
+        QStringLiteral("会话 ID"),
+        QStringLiteral("本端节点"),
+        QStringLiteral("对端节点"),
+        QStringLiteral("本地设备"),
+        QStringLiteral("远端设备"),
+        QStringLiteral("传输方式"),
     });
     m_usbTable->horizontalHeader()->setStretchLastSection(true);
     m_usbTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -308,42 +308,42 @@ void MainWindow::buildUi() {
     m_usbRuleText->setReadOnly(true);
 
     auto *usbDiscoveryRow = new QHBoxLayout();
-    usbDiscoveryRow->addWidget(new QLabel(QStringLiteral("本机 USB"), usbTab));
+    usbDiscoveryRow->addWidget(new QLabel(QStringLiteral("本机 USB 设备"), usbTab));
     usbDiscoveryRow->addWidget(m_usbDetectedCombo, 1);
     usbDiscoveryRow->addWidget(m_usbDetectButton);
     usbDiscoveryRow->addWidget(m_usbUseDetectedButton);
     int row = 0;
-    usbForm->addWidget(new QLabel(QStringLiteral("Node ID"), usbTab), row, 0);
+    usbForm->addWidget(new QLabel(QStringLiteral("本端节点 ID"), usbTab), row, 0);
     usbForm->addWidget(m_usbNodeIdEdit, row, 1);
-    usbForm->addWidget(new QLabel(QStringLiteral("Peer Node ID"), usbTab), row, 2);
+    usbForm->addWidget(new QLabel(QStringLiteral("对端节点 ID"), usbTab), row, 2);
     usbForm->addWidget(m_usbPeerNodeIdEdit, row, 3);
     ++row;
-    usbForm->addWidget(new QLabel(QStringLiteral("Local Bus"), usbTab), row, 0);
+    usbForm->addWidget(new QLabel(QStringLiteral("本地总线"), usbTab), row, 0);
     usbForm->addWidget(m_usbLocalBusEdit, row, 1);
-    usbForm->addWidget(new QLabel(QStringLiteral("Local Device"), usbTab), row, 2);
+    usbForm->addWidget(new QLabel(QStringLiteral("本地设备号"), usbTab), row, 2);
     usbForm->addWidget(m_usbLocalDeviceEdit, row, 3);
     ++row;
-    usbForm->addWidget(new QLabel(QStringLiteral("Local Vendor"), usbTab), row, 0);
+    usbForm->addWidget(new QLabel(QStringLiteral("本地厂商 ID"), usbTab), row, 0);
     usbForm->addWidget(m_usbLocalVendorEdit, row, 1);
-    usbForm->addWidget(new QLabel(QStringLiteral("Local Product"), usbTab), row, 2);
+    usbForm->addWidget(new QLabel(QStringLiteral("本地产品 ID"), usbTab), row, 2);
     usbForm->addWidget(m_usbLocalProductEdit, row, 3);
     ++row;
-    usbForm->addWidget(new QLabel(QStringLiteral("Local Interface"), usbTab), row, 0);
+    usbForm->addWidget(new QLabel(QStringLiteral("本地接口"), usbTab), row, 0);
     usbForm->addWidget(m_usbLocalInterfaceEdit, row, 1);
-    usbForm->addWidget(new QLabel(QStringLiteral("Transport"), usbTab), row, 2);
+    usbForm->addWidget(new QLabel(QStringLiteral("传输方式"), usbTab), row, 2);
     usbForm->addWidget(m_usbTransportEdit, row, 3);
     ++row;
-    usbForm->addWidget(new QLabel(QStringLiteral("Remote Bus"), usbTab), row, 0);
+    usbForm->addWidget(new QLabel(QStringLiteral("远端总线"), usbTab), row, 0);
     usbForm->addWidget(m_usbRemoteBusEdit, row, 1);
-    usbForm->addWidget(new QLabel(QStringLiteral("Remote Device"), usbTab), row, 2);
+    usbForm->addWidget(new QLabel(QStringLiteral("远端设备号"), usbTab), row, 2);
     usbForm->addWidget(m_usbRemoteDeviceEdit, row, 3);
     ++row;
-    usbForm->addWidget(new QLabel(QStringLiteral("Remote Vendor"), usbTab), row, 0);
+    usbForm->addWidget(new QLabel(QStringLiteral("远端厂商 ID"), usbTab), row, 0);
     usbForm->addWidget(m_usbRemoteVendorEdit, row, 1);
-    usbForm->addWidget(new QLabel(QStringLiteral("Remote Product"), usbTab), row, 2);
+    usbForm->addWidget(new QLabel(QStringLiteral("远端产品 ID"), usbTab), row, 2);
     usbForm->addWidget(m_usbRemoteProductEdit, row, 3);
     ++row;
-    usbForm->addWidget(new QLabel(QStringLiteral("Remote Interface"), usbTab), row, 0);
+    usbForm->addWidget(new QLabel(QStringLiteral("远端接口"), usbTab), row, 0);
     usbForm->addWidget(m_usbRemoteInterfaceEdit, row, 1);
 
     auto *usbButtons = new QHBoxLayout();
@@ -358,16 +358,16 @@ void MainWindow::buildUi() {
     usbLayout->addWidget(m_usbTable, 2);
     usbLayout->addWidget(new QLabel(QStringLiteral("USB 驱动 / 规则"), usbTab));
     usbLayout->addWidget(m_usbRuleText, 1);
-    usbLayout->addWidget(new QLabel(QStringLiteral("USB JSON"), usbTab));
+    usbLayout->addWidget(new QLabel(QStringLiteral("USB JSON 配置"), usbTab));
     usbLayout->addWidget(m_usbJsonText, 1);
-    usbLayout->addWidget(new QLabel(QStringLiteral("USB Report"), usbTab));
+    usbLayout->addWidget(new QLabel(QStringLiteral("USB 报告"), usbTab));
     usbLayout->addWidget(m_usbReportText, 1);
 
-    tabs->addTab(overviewTab, QStringLiteral("Overview"));
-    tabs->addTab(nodesTab, QStringLiteral("Nodes"));
-    tabs->addTab(registrationTab, QStringLiteral("Enroll"));
-    tabs->addTab(serialTab, QStringLiteral("Serial"));
-    tabs->addTab(usbTab, QStringLiteral("USB"));
+    tabs->addTab(overviewTab, QStringLiteral("概览"));
+    tabs->addTab(nodesTab, QStringLiteral("节点"));
+    tabs->addTab(registrationTab, QStringLiteral("注册"));
+    tabs->addTab(serialTab, QStringLiteral("串口"));
+    tabs->addTab(usbTab, QStringLiteral("USB 设备"));
 
     rootLayout->addWidget(connectionGroup);
     rootLayout->addWidget(tabs, 1);
@@ -425,22 +425,22 @@ void MainWindow::wireSignals() {
         exportAgentConfigSnippet(QStringLiteral("windows-agent"), QStringLiteral("windows-agent-forwarding.snippet.json"));
     });
     connect(m_importLinuxAgentButton, &QPushButton::clicked, this, [this]() {
-        importAgentConfigSnippet(QStringLiteral("Import Linux Agent Forwarding Snippet"));
+        importAgentConfigSnippet(QStringLiteral("导入 Linux Agent 转发配置片段"));
     });
     connect(m_importWindowsAgentButton, &QPushButton::clicked, this, [this]() {
-        importAgentConfigSnippet(QStringLiteral("Import Windows Agent Forwarding Snippet"));
+        importAgentConfigSnippet(QStringLiteral("导入 Windows Agent 转发配置片段"));
     });
 
     connect(m_serialAddButton, &QPushButton::clicked, this, [this]() {
         const QJsonObject entry = buildSerialPayload();
         if (entry.isEmpty()) {
-            appendLog(QStringLiteral("Serial mapping requires local and remote port names"));
+            appendLog(QStringLiteral("串口映射需要填写本地串口和远端串口名称"));
             return;
         }
         m_serialEntries.append(entry);
         refreshSerialTable();
         saveForwardingSettings();
-        appendLog(QStringLiteral("Added serial forwarding mapping %1").arg(entry.value(QStringLiteral("session_id")).toString()));
+        appendLog(QStringLiteral("已添加串口转发映射 %1").arg(entry.value(QStringLiteral("session_id")).toString()));
     });
     connect(m_serialRemoveButton, &QPushButton::clicked, this, [this]() {
         const int row = m_serialTable->currentRow();
@@ -452,28 +452,28 @@ void MainWindow::wireSignals() {
         saveForwardingSettings();
     });
     connect(m_serialExportButton, &QPushButton::clicked, this, [this]() {
-        exportEntries(QStringLiteral("Export Serial Forwarding"), QStringLiteral("serial-forwards.json"), m_serialEntries);
+        exportEntries(QStringLiteral("导出串口转发配置"), QStringLiteral("serial-forwards.json"), m_serialEntries);
     });
     connect(m_serialImportButton, &QPushButton::clicked, this, [this]() {
-        if (importEntriesFromFile(QStringLiteral("Import Serial Forwarding"), QStringLiteral("serial_forwards"), &m_serialEntries)) {
+        if (importEntriesFromFile(QStringLiteral("导入串口转发配置"), QStringLiteral("serial_forwards"), &m_serialEntries)) {
             refreshSerialTable();
             saveForwardingSettings();
         }
     });
     connect(m_serialLoadReportButton, &QPushButton::clicked, this, [this]() {
-        loadJsonPreviewFromFile(QStringLiteral("Load Serial Forwarding Report"), m_serialReportText);
+        loadJsonPreviewFromFile(QStringLiteral("加载串口转发报告"), m_serialReportText);
     });
 
     connect(m_usbAddButton, &QPushButton::clicked, this, [this]() {
         const QJsonObject entry = buildUsbPayload();
         if (entry.isEmpty()) {
-            appendLog(QStringLiteral("USB mapping requires at least one local and one remote device identifier"));
+            appendLog(QStringLiteral("USB 映射至少需要填写一组本地设备和远端设备标识"));
             return;
         }
         m_usbEntries.append(entry);
         refreshUsbTable();
         saveForwardingSettings();
-        appendLog(QStringLiteral("Added USB forwarding mapping %1").arg(entry.value(QStringLiteral("session_id")).toString()));
+        appendLog(QStringLiteral("已添加 USB 转发映射 %1").arg(entry.value(QStringLiteral("session_id")).toString()));
     });
     connect(m_usbRemoveButton, &QPushButton::clicked, this, [this]() {
         const int row = m_usbTable->currentRow();
@@ -485,43 +485,53 @@ void MainWindow::wireSignals() {
         saveForwardingSettings();
     });
     connect(m_usbExportButton, &QPushButton::clicked, this, [this]() {
-        exportEntries(QStringLiteral("Export USB Forwarding"), QStringLiteral("usb-forwards.json"), m_usbEntries);
+        exportEntries(QStringLiteral("导出 USB 转发配置"), QStringLiteral("usb-forwards.json"), m_usbEntries);
     });
     connect(m_usbImportButton, &QPushButton::clicked, this, [this]() {
-        if (importEntriesFromFile(QStringLiteral("Import USB Forwarding"), QStringLiteral("usb_forwards"), &m_usbEntries)) {
+        if (importEntriesFromFile(QStringLiteral("导入 USB 转发配置"), QStringLiteral("usb_forwards"), &m_usbEntries)) {
             refreshUsbTable();
             saveForwardingSettings();
         }
     });
     connect(m_usbLoadReportButton, &QPushButton::clicked, this, [this]() {
-        loadJsonPreviewFromFile(QStringLiteral("Load USB Forwarding Report"), m_usbReportText);
+        loadJsonPreviewFromFile(QStringLiteral("加载 USB 转发报告"), m_usbReportText);
     });
 
     connect(m_client, &ControlPlaneClient::healthReady, this, [this](const QJsonObject &payload) {
         m_overviewText->setPlainText(QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Indented)));
-        appendLog(QStringLiteral("Health check succeeded"));
-        statusBar()->showMessage(QStringLiteral("Health OK"), 3000);
+        appendLog(QStringLiteral("健康检查成功"));
+        statusBar()->showMessage(QStringLiteral("健康检查正常"), 3000);
     });
     connect(m_client, &ControlPlaneClient::loginReady, this, [this](const QString &accessToken, const QJsonObject &, const QJsonObject &payload) {
         m_tokenEdit->setText(accessToken);
         m_client->setAccessToken(accessToken);
         m_overviewText->setPlainText(QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Indented)));
-        appendLog(QStringLiteral("Login succeeded"));
-        statusBar()->showMessage(QStringLiteral("Logged in"), 3000);
+        appendLog(QStringLiteral("登录成功"));
+        statusBar()->showMessage(QStringLiteral("已登录"), 3000);
     });
     connect(m_client, &ControlPlaneClient::nodesReady, this, [this](const QJsonArray &items, const QJsonObject &payload) {
         updateNodesTable(items);
         m_overviewText->setPlainText(QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Indented)));
-        appendLog(QStringLiteral("Loaded %1 nodes").arg(items.size()));
-        statusBar()->showMessage(QStringLiteral("Nodes refreshed"), 3000);
+        appendLog(QStringLiteral("已加载 %1 个节点").arg(items.size()));
+        statusBar()->showMessage(QStringLiteral("节点已刷新"), 3000);
     });
     connect(m_client, &ControlPlaneClient::deviceRegistered, this, [this](const QJsonObject &payload) {
         m_registrationText->setPlainText(QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Indented)));
-        appendLog(QStringLiteral("Device registered"));
-        statusBar()->showMessage(QStringLiteral("Device registered"), 3000);
+        appendLog(QStringLiteral("设备注册成功"));
+        statusBar()->showMessage(QStringLiteral("设备已注册"), 3000);
     });
     connect(m_client, &ControlPlaneClient::requestFailed, this, [this](const QString &operation, const QString &message, int statusCode) {
-        const QString line = QStringLiteral("%1 failed (%2): %3").arg(operation).arg(statusCode).arg(message);
+        QString displayOperation = operation;
+        if (operation == QStringLiteral("health")) {
+            displayOperation = QStringLiteral("健康检查");
+        } else if (operation == QStringLiteral("login")) {
+            displayOperation = QStringLiteral("登录");
+        } else if (operation == QStringLiteral("nodes")) {
+            displayOperation = QStringLiteral("节点查询");
+        } else if (operation == QStringLiteral("register")) {
+            displayOperation = QStringLiteral("设备注册");
+        }
+        const QString line = QStringLiteral("%1失败（%2）：%3").arg(displayOperation).arg(statusCode).arg(message);
         appendLog(line);
         statusBar()->showMessage(line, 5000);
     });
@@ -790,50 +800,50 @@ void MainWindow::syncForwardingPreview(QPlainTextEdit *editor, const QJsonArray 
 }
 
 void MainWindow::exportEntries(const QString &title, const QString &suggestedName, const QJsonArray &entries) {
-    const QString path = QFileDialog::getSaveFileName(this, title, suggestedName, QStringLiteral("JSON Files (*.json)"));
+    const QString path = QFileDialog::getSaveFileName(this, title, suggestedName, QStringLiteral("JSON 文件 (*.json)"));
     if (path.isEmpty()) {
         return;
     }
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        appendLog(QStringLiteral("Failed to export %1").arg(path));
+        appendLog(QStringLiteral("导出失败：%1").arg(path));
         return;
     }
     file.write(QJsonDocument(entries).toJson(QJsonDocument::Indented));
-    appendLog(QStringLiteral("Exported forwarding entries to %1").arg(path));
+    appendLog(QStringLiteral("已导出转发配置到 %1").arg(path));
 }
 
 void MainWindow::exportAgentConfigSnippet(const QString &platform, const QString &suggestedName) {
     const QString title = platform == QStringLiteral("windows-agent")
-                              ? QStringLiteral("Export Windows Agent Forwarding Snippet")
-                              : QStringLiteral("Export Linux Agent Forwarding Snippet");
-    const QString path = QFileDialog::getSaveFileName(this, title, suggestedName, QStringLiteral("JSON Files (*.json)"));
+                              ? QStringLiteral("导出 Windows Agent 转发配置片段")
+                              : QStringLiteral("导出 Linux Agent 转发配置片段");
+    const QString path = QFileDialog::getSaveFileName(this, title, suggestedName, QStringLiteral("JSON 文件 (*.json)"));
     if (path.isEmpty()) {
         return;
     }
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        appendLog(QStringLiteral("Failed to export %1").arg(path));
+        appendLog(QStringLiteral("导出失败：%1").arg(path));
         return;
     }
     file.write(QJsonDocument(buildAgentConfigSnippet(platform)).toJson(QJsonDocument::Indented));
-    appendLog(QStringLiteral("Exported %1 forwarding snippet to %2").arg(platform, path));
+    appendLog(QStringLiteral("已导出 %1 转发配置片段到 %2").arg(platform, path));
 }
 
 void MainWindow::importAgentConfigSnippet(const QString &title) {
-    const QString path = QFileDialog::getOpenFileName(this, title, QString(), QStringLiteral("JSON Files (*.json)"));
+    const QString path = QFileDialog::getOpenFileName(this, title, QString(), QStringLiteral("JSON 文件 (*.json)"));
     if (path.isEmpty()) {
         return;
     }
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        appendLog(QStringLiteral("Failed to open %1").arg(path));
+        appendLog(QStringLiteral("打开失败：%1").arg(path));
         return;
     }
     const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
     if (!doc.isObject()) {
-        appendLog(QStringLiteral("Expected agent snippet object in %1").arg(path));
+        appendLog(QStringLiteral("配置片段格式不正确：%1").arg(path));
         return;
     }
     const QJsonObject object = doc.object();
@@ -850,20 +860,20 @@ void MainWindow::importAgentConfigSnippet(const QString &title) {
     }
     if (!serialEntries.isEmpty() || !usbEntries.isEmpty()) {
         saveForwardingSettings();
-        appendLog(QStringLiteral("Imported agent forwarding snippet from %1").arg(path));
+        appendLog(QStringLiteral("已从 %1 导入 Agent 转发配置片段").arg(path));
         return;
     }
-    appendLog(QStringLiteral("No serial_forwards or usb_forwards found in %1").arg(path));
+    appendLog(QStringLiteral("在 %1 中未找到 serial_forwards 或 usb_forwards").arg(path));
 }
 
 bool MainWindow::importEntriesFromFile(const QString &title, const QString &objectKey, QJsonArray *entries) {
-    const QString path = QFileDialog::getOpenFileName(this, title, QString(), QStringLiteral("JSON Files (*.json)"));
+    const QString path = QFileDialog::getOpenFileName(this, title, QString(), QStringLiteral("JSON 文件 (*.json)"));
     if (path.isEmpty()) {
         return false;
     }
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        appendLog(QStringLiteral("Failed to open %1").arg(path));
+        appendLog(QStringLiteral("打开失败：%1").arg(path));
         return false;
     }
     const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
@@ -874,31 +884,31 @@ bool MainWindow::importEntriesFromFile(const QString &title, const QString &obje
         imported = doc.object().value(objectKey).toArray();
     }
     if (imported.isEmpty()) {
-        appendLog(QStringLiteral("No %1 entries found in %2").arg(objectKey, path));
+        appendLog(QStringLiteral("在 %2 中未找到 %1 条目").arg(objectKey, path));
         return false;
     }
     *entries = imported;
-    appendLog(QStringLiteral("Imported %1 entries from %2").arg(objectKey, path));
+    appendLog(QStringLiteral("已从 %2 导入 %1 条目").arg(path, objectKey));
     return true;
 }
 
 void MainWindow::loadJsonPreviewFromFile(const QString &title, QPlainTextEdit *editor) {
-    const QString path = QFileDialog::getOpenFileName(this, title, QString(), QStringLiteral("JSON Files (*.json)"));
+    const QString path = QFileDialog::getOpenFileName(this, title, QString(), QStringLiteral("JSON 文件 (*.json)"));
     if (path.isEmpty()) {
         return;
     }
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        appendLog(QStringLiteral("Failed to open %1").arg(path));
+        appendLog(QStringLiteral("打开失败：%1").arg(path));
         return;
     }
     const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
     if (doc.isNull()) {
-        appendLog(QStringLiteral("Failed to parse JSON from %1").arg(path));
+        appendLog(QStringLiteral("JSON 解析失败：%1").arg(path));
         return;
     }
     editor->setPlainText(QString::fromUtf8(doc.toJson(QJsonDocument::Indented)));
-    appendLog(QStringLiteral("Loaded report %1").arg(path));
+    appendLog(QStringLiteral("已加载报告 %1").arg(path));
 }
 
 QJsonObject MainWindow::buildRegistrationPayload() const {

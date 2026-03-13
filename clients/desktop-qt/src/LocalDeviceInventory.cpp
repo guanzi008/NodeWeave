@@ -244,7 +244,7 @@ QJsonArray enumerateLinuxUsbDevices() {
         const QString manufacturer = readTrimmed(base + QStringLiteral("/manufacturer"));
         const QString productName = readTrimmed(base + QStringLiteral("/product"));
         const QString serial = readTrimmed(base + QStringLiteral("/serial"));
-        const QString displayName = QStringLiteral("Bus %1 Device %2 %3:%4 %5 %6")
+        const QString displayName = QStringLiteral("总线 %1 设备 %2 %3:%4 %5 %6")
                                         .arg(busNum.isEmpty() ? QStringLiteral("?") : busNum,
                                              devNum.isEmpty() ? QStringLiteral("?") : devNum,
                                              vendor,

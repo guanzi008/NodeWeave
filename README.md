@@ -160,6 +160,7 @@ cmake --build ./build/desktop-qt -j
 - `packages/runtime/go/forwarding/usb` 已提供 USB 设备描述、会话建模、兼容性匹配和 forwarding report 基础层
 - `linux-agent` / `windows-agent` 现在都会把 `serial_forwards` 和 `usb_forwards` 落成独立状态文件与 report，可直接用状态命令读取
 - `desktop-qt` 已提供 Qt5/Qt6 兼容的图形客户端骨架，当前可执行控制面健康检查、管理员登录、节点列表查询、设备注册，以及串口 / USB 映射编辑、本机串口/USB 自动扫描、驱动/规则提示、Linux / Windows agent forwarding snippet 导入导出和本地 forwarding report 查看
+- `desktop-qt` 当前界面文案已完成中文化，适合作为 Linux / Windows 桌面客户端的统一 GUI 基线
 
 ## 常用命令
 

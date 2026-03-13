@@ -21,6 +21,7 @@
 - Linux / Windows agent forwarding snippet 导出
 - Linux / Windows agent forwarding snippet 导入
 - 串口 / USB forwarding report 本地查看
+- 图形界面中文化
 - 本地 `QSettings` 持久化
 
 这版定位是跨平台 GUI 基线，后续再继续接：

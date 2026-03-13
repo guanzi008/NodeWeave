@@ -1,4 +1,4 @@
-.PHONY: fmt test build e2e run-controlplane desktop-qt-configure desktop-qt-build
+.PHONY: fmt test build e2e run-controlplane desktop-qt-configure desktop-qt-build desktop-qt-install
 
 fmt:
 	$(MAKE) -C packages/contracts/go fmt
@@ -40,3 +40,6 @@ desktop-qt-configure:
 
 desktop-qt-build: desktop-qt-configure
 	cmake --build build/desktop-qt -j
+
+desktop-qt-install: desktop-qt-configure
+	cmake --install build/desktop-qt --prefix "$(HOME)/.local"

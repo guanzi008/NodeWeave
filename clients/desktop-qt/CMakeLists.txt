@@ -21,6 +21,7 @@ set(NODEWEAVE_DESKTOP_SOURCES
     src/ControlPlaneClient.h
     src/LocalDeviceInventory.cpp
     src/LocalDeviceInventory.h
+    resources/resources.qrc
 )
 
 add_executable(nodeweave-desktop
@@ -40,7 +41,23 @@ set_target_properties(nodeweave-desktop PROPERTIES
     OUTPUT_NAME "nodeweave-desktop"
 )
 
+configure_file(
+    resources/nodeweave-desktop.desktop.in
+    ${CMAKE_CURRENT_BINARY_DIR}/nodeweave-desktop.desktop
+    @ONLY
+)
+
 install(TARGETS nodeweave-desktop
     RUNTIME DESTINATION bin
     BUNDLE DESTINATION .
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/nodeweave-desktop.desktop
+    DESTINATION share/applications
+)
+
+install(FILES
+    resources/nodeweave-desktop.svg
+    DESTINATION share/icons/hicolor/scalable/apps
 )

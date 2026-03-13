@@ -43,6 +43,26 @@ cmake --build build/desktop-qt -j
 生成产物：
 
 - `build/desktop-qt/nodeweave-desktop`
+- `build/desktop-qt/nodeweave-desktop.desktop`
+
+## Linux / DDE 任务栏图标
+
+当前已经补齐：
+
+- Qt 应用内窗口图标
+- `QApplication::setDesktopFileName("nodeweave-desktop")`
+- `StartupWMClass=nodeweave-desktop`
+- 标准 Linux `.desktop` 入口
+- `hicolor` 图标安装路径
+
+安装到当前用户目录：
+
+```bash
+cmake --install build/desktop-qt --prefix ~/.local
+```
+
+安装后 DDE / 其它 Linux 桌面环境会通过 `nodeweave-desktop.desktop` 和
+`nodeweave-desktop` 图标名识别任务栏图标与启动器归属。
 
 ## 依赖
 

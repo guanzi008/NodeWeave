@@ -8,6 +8,7 @@
 - `linux-cli`
 - `windows-agent`
 - `windows-cli`
+- `desktop-qt`
 
 后续再扩：
 

@@ -48,6 +48,7 @@
 - `clients/linux-cli/cmd/linux-cli`：Linux CLI 注册、状态查询、心跳
 - `clients/windows-agent/cmd/windows-agent`：Windows 常驻节点代理骨架
 - `clients/windows-cli/cmd/windows-cli`：Windows CLI 注册、状态查询、心跳
+- `clients/desktop-qt`：Qt5/Qt6 + CMake 图形客户端骨架
 - `packages/runtime/go`：共享 overlay runtime 和 driver 抽象
 - `packages/runtime/go/forwarding/serial`：串口转发共享运行时基础层
 - `deployments/local/docker-compose.yml`：本地容器化部署
@@ -78,10 +79,16 @@ go run ./clients/linux-agent/cmd/linux-agent dataplane-status --config ~/.config
 go run ./clients/linux-agent/cmd/linux-agent transport-status --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/linux-agent/cmd/linux-agent direct-attempt-status --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/linux-agent/cmd/linux-agent direct-attempt-report --config ~/.config/nodeweave/linux-agent.json
+go run ./clients/linux-agent/cmd/linux-agent serial-forward-status --config ~/.config/nodeweave/linux-agent.json
+go run ./clients/linux-agent/cmd/linux-agent usb-forward-status --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/windows-cli/cmd/windows-cli enroll --server http://127.0.0.1:8080
 go run ./clients/windows-agent/cmd/windows-agent init-config
 go run ./clients/windows-agent/cmd/windows-agent runtime-status --config ~/.config/nodeweave/windows-agent.json
+go run ./clients/windows-agent/cmd/windows-agent serial-forward-status --config ~/.config/nodeweave/windows-agent.json
+go run ./clients/windows-agent/cmd/windows-agent usb-forward-status --config ~/.config/nodeweave/windows-agent.json
+cmake -S ./clients/desktop-qt -B ./build/desktop-qt
+cmake --build ./build/desktop-qt -j
 ```
 
 默认监听地址：
@@ -150,6 +157,9 @@ go run ./clients/windows-agent/cmd/windows-agent runtime-status --config ~/.conf
 - `windows-agent` 已打通注册、heartbeat、bootstrap 同步和 `windows-dry-run` runtime snapshot 编译
 - `windows-agent` 当前不直接创建 Wintun、Windows 路由或 DNS，先把控制面接入和本地 runtime 文件链路落地
 - `packages/runtime/go/forwarding/serial` 已提供串口会话建模、流参数标准化和双向 stream bridge，可作为后续串口转发和 TCP encapsulation 的共享基础层
+- `packages/runtime/go/forwarding/usb` 已提供 USB 设备描述、会话建模、兼容性匹配和 forwarding report 基础层
+- `linux-agent` / `windows-agent` 现在都会把 `serial_forwards` 和 `usb_forwards` 落成独立状态文件与 report，可直接用状态命令读取
+- `desktop-qt` 已提供 Qt5/Qt6 兼容的图形客户端骨架，当前可执行控制面健康检查、管理员登录、节点列表查询、设备注册，以及串口 / USB 映射编辑、Linux / Windows agent forwarding snippet 导入导出和本地 forwarding report 查看
 
 ## 常用命令
 

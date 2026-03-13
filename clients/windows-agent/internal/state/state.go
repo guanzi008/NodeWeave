@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"nodeweave/packages/contracts/go/api"
+	"nodeweave/packages/runtime/go/forwarding/serial"
+	"nodeweave/packages/runtime/go/forwarding/usb"
 	"nodeweave/packages/runtime/go/overlay"
 )
 
@@ -95,6 +97,128 @@ func SaveRuntime(path string, snapshot overlay.Snapshot) error {
 	}
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		return fmt.Errorf("write runtime file: %w", err)
+	}
+	return nil
+}
+
+func LoadSerialForwards(path string) ([]serial.SessionSpec, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read serial forward file: %w", err)
+	}
+	var specs []serial.SessionSpec
+	if err := json.Unmarshal(raw, &specs); err != nil {
+		return nil, fmt.Errorf("parse serial forward file: %w", err)
+	}
+	for idx, spec := range specs {
+		specs[idx] = serial.NormalizeSessionSpec(spec)
+	}
+	return specs, nil
+}
+
+func SaveSerialForwards(path string, specs []serial.SessionSpec) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create serial forward dir: %w", err)
+	}
+	raw, err := json.MarshalIndent(specs, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal serial forward file: %w", err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return fmt.Errorf("write serial forward file: %w", err)
+	}
+	return nil
+}
+
+func LoadSerialForwardReport(path string) ([]serial.SessionReport, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read serial forward report file: %w", err)
+	}
+	var reports []serial.SessionReport
+	if err := json.Unmarshal(raw, &reports); err != nil {
+		return nil, fmt.Errorf("parse serial forward report file: %w", err)
+	}
+	return reports, nil
+}
+
+func SaveSerialForwardReport(path string, reports []serial.SessionReport) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create serial forward report dir: %w", err)
+	}
+	raw, err := json.MarshalIndent(reports, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal serial forward report file: %w", err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return fmt.Errorf("write serial forward report file: %w", err)
+	}
+	return nil
+}
+
+func LoadUSBForwards(path string) ([]usb.SessionSpec, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read usb forward file: %w", err)
+	}
+	var specs []usb.SessionSpec
+	if err := json.Unmarshal(raw, &specs); err != nil {
+		return nil, fmt.Errorf("parse usb forward file: %w", err)
+	}
+	for idx, spec := range specs {
+		specs[idx] = usb.NormalizeSessionSpec(spec)
+	}
+	return specs, nil
+}
+
+func SaveUSBForwards(path string, specs []usb.SessionSpec) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create usb forward dir: %w", err)
+	}
+	raw, err := json.MarshalIndent(specs, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal usb forward file: %w", err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return fmt.Errorf("write usb forward file: %w", err)
+	}
+	return nil
+}
+
+func LoadUSBForwardReport(path string) ([]usb.SessionReport, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read usb forward report file: %w", err)
+	}
+	var reports []usb.SessionReport
+	if err := json.Unmarshal(raw, &reports); err != nil {
+		return nil, fmt.Errorf("parse usb forward report file: %w", err)
+	}
+	return reports, nil
+}
+
+func SaveUSBForwardReport(path string, reports []usb.SessionReport) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create usb forward report dir: %w", err)
+	}
+	raw, err := json.MarshalIndent(reports, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal usb forward report file: %w", err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return fmt.Errorf("write usb forward report file: %w", err)
 	}
 	return nil
 }

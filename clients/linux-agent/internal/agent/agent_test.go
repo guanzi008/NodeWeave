@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,10 @@ import (
 	"nodeweave/packages/contracts/go/api"
 	contractsclient "nodeweave/packages/contracts/go/client"
 	"nodeweave/packages/runtime/go/dataplane"
+	"nodeweave/packages/runtime/go/driver"
+	"nodeweave/packages/runtime/go/forwarding/serial"
+	"nodeweave/packages/runtime/go/forwarding/usb"
+	"nodeweave/packages/runtime/go/overlay"
 	"nodeweave/packages/runtime/go/secureudp"
 	"nodeweave/packages/runtime/go/session"
 )
@@ -28,6 +33,20 @@ func agentDirectAttemptCandidate(address string) api.DirectAttemptCandidate {
 		Priority: 1000,
 		Phase:    api.DirectAttemptPhasePrimary,
 	}
+}
+
+type failingRuntimeDriver struct{}
+
+func (failingRuntimeDriver) Name() string {
+	return "failing-driver"
+}
+
+func (failingRuntimeDriver) Apply(context.Context, overlay.Snapshot) (driver.Report, error) {
+	return driver.Report{
+		Backend:   "failing-driver",
+		AppliedAt: time.Now().UTC(),
+		Success:   false,
+	}, context.DeadlineExceeded
 }
 
 func TestReloadDataplaneKeepsRuntimeWhenSignatureUnchanged(t *testing.T) {
@@ -908,6 +927,107 @@ func TestApplyRuntimeUsesProbeSelectedRelayCandidate(t *testing.T) {
 	responderCancel()
 	if err := <-responderErrCh; err != nil {
 		t.Fatalf("responder serve: %v", err)
+	}
+}
+
+func TestApplyRuntimePersistsForwardingStateWhenDriverFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := config.Config{
+		Platform:                "linux-agent",
+		RuntimePath:             filepath.Join(tmpDir, "runtime.json"),
+		PlanPath:                filepath.Join(tmpDir, "plan.json"),
+		ApplyReportPath:         filepath.Join(tmpDir, "apply-report.json"),
+		SessionPath:             filepath.Join(tmpDir, "session.json"),
+		SessionReportPath:       filepath.Join(tmpDir, "session-report.json"),
+		DataplanePath:           filepath.Join(tmpDir, "dataplane.json"),
+		DataplaneListenAddress:  "127.0.0.1:0",
+		SessionProbeMode:        "off",
+		InterfaceName:           "nw0",
+		InterfaceMTU:            1380,
+		SerialForwardPath:       filepath.Join(tmpDir, "serial-forwards.json"),
+		SerialForwardReportPath: filepath.Join(tmpDir, "serial-forward-report.json"),
+		USBForwardPath:          filepath.Join(tmpDir, "usb-forwards.json"),
+		USBForwardReportPath:    filepath.Join(tmpDir, "usb-forward-report.json"),
+		SerialForwards: []serial.SessionSpec{
+			{
+				PeerNodeID: "node-b",
+				Local:      serial.PortConfig{Name: "/dev/ttyUSB0"},
+				Remote:     serial.PortConfig{Name: "COM9"},
+			},
+		},
+		USBForwards: []usb.SessionSpec{
+			{
+				PeerNodeID: "node-b",
+				Local:      usb.DeviceDescriptor{BusID: "1", DeviceID: "2", VendorID: "1d6b", ProductID: "0002"},
+				Remote:     usb.DeviceDescriptor{VendorID: "1d6b", ProductID: "0002"},
+			},
+		},
+	}
+
+	svc := &Service{
+		cfg:           cfg,
+		runtimeDriver: failingRuntimeDriver{},
+		state: state.File{
+			Node: api.Node{
+				ID:        "node-a",
+				OverlayIP: "100.64.0.10",
+				PublicKey: "pub-a",
+				Status:    "online",
+			},
+			Bootstrap: api.BootstrapConfig{
+				Version:     1,
+				OverlayCIDR: "100.64.0.0/24",
+				Node: api.Node{
+					ID:        "node-a",
+					OverlayIP: "100.64.0.10",
+					PublicKey: "pub-a",
+					Status:    "online",
+				},
+				Peers: []api.Peer{
+					{
+						NodeID:    "node-b",
+						OverlayIP: "100.64.0.11",
+						PublicKey: "pub-b",
+						Status:    "online",
+					},
+				},
+			},
+		},
+	}
+
+	err := svc.ApplyRuntime(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "apply overlay runtime") {
+		t.Fatalf("expected apply overlay runtime error, got %v", err)
+	}
+
+	serialSpecs, err := state.LoadSerialForwards(cfg.SerialForwardPath)
+	if err != nil {
+		t.Fatalf("load serial forwards: %v", err)
+	}
+	if len(serialSpecs) != 1 || serialSpecs[0].NodeID != "node-a" {
+		t.Fatalf("unexpected serial forwarding state: %#v", serialSpecs)
+	}
+	serialReports, err := state.LoadSerialForwardReport(cfg.SerialForwardReportPath)
+	if err != nil {
+		t.Fatalf("load serial forward report: %v", err)
+	}
+	if len(serialReports) != 1 || serialReports[0].ClosedBy != "linux-agent" {
+		t.Fatalf("unexpected serial forward report: %#v", serialReports)
+	}
+
+	usbSpecs, err := state.LoadUSBForwards(cfg.USBForwardPath)
+	if err != nil {
+		t.Fatalf("load usb forwards: %v", err)
+	}
+	if len(usbSpecs) != 1 || usbSpecs[0].NodeID != "node-a" {
+		t.Fatalf("unexpected usb forwarding state: %#v", usbSpecs)
+	}
+	usbReports, err := state.LoadUSBForwardReport(cfg.USBForwardReportPath)
+	if err != nil {
+		t.Fatalf("load usb forward report: %v", err)
+	}
+	if len(usbReports) != 1 || usbReports[0].ClaimedBy != "linux-agent" {
+		t.Fatalf("unexpected usb forward report: %#v", usbReports)
 	}
 }
 

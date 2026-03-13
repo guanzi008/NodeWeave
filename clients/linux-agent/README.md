@@ -26,6 +26,10 @@ go run ./cmd/linux-agent transport-status --config ~/.config/nodeweave/linux-age
 go run ./cmd/linux-agent direct-attempt-status --config ~/.config/nodeweave/linux-agent.json
 go run ./cmd/linux-agent direct-attempt-report --config ~/.config/nodeweave/linux-agent.json
 go run ./cmd/linux-agent recovery-status --config ~/.config/nodeweave/linux-agent.json
+go run ./cmd/linux-agent serial-forward-status --config ~/.config/nodeweave/linux-agent.json
+go run ./cmd/linux-agent serial-forward-report --config ~/.config/nodeweave/linux-agent.json
+go run ./cmd/linux-agent usb-forward-status --config ~/.config/nodeweave/linux-agent.json
+go run ./cmd/linux-agent usb-forward-report --config ~/.config/nodeweave/linux-agent.json
 go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.json
 ```
 
@@ -33,6 +37,13 @@ go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.js
 
 - `configs/linux-agent.example.json`：配置样例
 - `deploy/systemd/nodeweave-linux-agent.service`：systemd 服务样例
+
+## 串口 / USB forwarding
+
+- `serial_forwards` 和 `usb_forwards` 会在 runtime apply 时规范化后落盘
+- `serial-forward-status` / `usb-forward-status` 用于查看当前配置的 forwarding sessions
+- `serial-forward-report` / `usb-forward-report` 用于查看当前 agent 生成的 forwarding report 基线
+- 当前这条链路先落配置、状态文件和报告，不直接打开本机串口或 USB 设备
 
 ## 身份和密钥
 

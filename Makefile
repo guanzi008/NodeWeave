@@ -1,4 +1,4 @@
-.PHONY: fmt test build e2e run-controlplane
+.PHONY: fmt test build e2e run-controlplane desktop-qt-configure desktop-qt-build
 
 fmt:
 	$(MAKE) -C packages/contracts/go fmt
@@ -34,3 +34,9 @@ e2e:
 
 run-controlplane:
 	$(MAKE) -C services/controlplane run-controlplane
+
+desktop-qt-configure:
+	cmake -S clients/desktop-qt -B build/desktop-qt
+
+desktop-qt-build: desktop-qt-configure
+	cmake --build build/desktop-qt -j

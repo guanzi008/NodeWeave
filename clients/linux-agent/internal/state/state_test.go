@@ -10,6 +10,8 @@ import (
 	"nodeweave/packages/contracts/go/api"
 	"nodeweave/packages/runtime/go/dataplane"
 	"nodeweave/packages/runtime/go/driver"
+	"nodeweave/packages/runtime/go/forwarding/serial"
+	"nodeweave/packages/runtime/go/forwarding/usb"
 	"nodeweave/packages/runtime/go/overlay"
 	linuxplan "nodeweave/packages/runtime/go/plan/linux"
 	"nodeweave/packages/runtime/go/secureudp"
@@ -476,5 +478,79 @@ func TestSaveAndLoadSTUNReport(t *testing.T) {
 	}
 	if !got.Reachable || got.SelectedAddress != want.SelectedAddress || len(got.Servers) != 1 {
 		t.Fatalf("unexpected stun report roundtrip: %#v", got)
+	}
+}
+
+func TestSaveAndLoadSerialForwards(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "serial-forwards.json")
+	reportPath := filepath.Join(tmpDir, "serial-forward-report.json")
+	specs := []serial.SessionSpec{
+		{
+			NodeID:     "node-a",
+			PeerNodeID: "node-b",
+			Local:      serial.PortConfig{Name: "/dev/ttyUSB0", BaudRate: 9600},
+			Remote:     serial.PortConfig{Name: "COM7", BaudRate: 9600},
+		},
+	}
+
+	if err := SaveSerialForwards(path, specs); err != nil {
+		t.Fatalf("save serial forwards: %v", err)
+	}
+	if err := SaveSerialForwardReport(reportPath, []serial.SessionReport{serial.ConfiguredReport(specs[0], "linux-agent")}); err != nil {
+		t.Fatalf("save serial forward report: %v", err)
+	}
+
+	gotSpecs, err := LoadSerialForwards(path)
+	if err != nil {
+		t.Fatalf("load serial forwards: %v", err)
+	}
+	if len(gotSpecs) != 1 || gotSpecs[0].Local.Name != "/dev/ttyUSB0" {
+		t.Fatalf("unexpected serial forwarding state: %#v", gotSpecs)
+	}
+
+	gotReports, err := LoadSerialForwardReport(reportPath)
+	if err != nil {
+		t.Fatalf("load serial forward report: %v", err)
+	}
+	if len(gotReports) != 1 || gotReports[0].ClosedBy != "linux-agent" {
+		t.Fatalf("unexpected serial forwarding report: %#v", gotReports)
+	}
+}
+
+func TestSaveAndLoadUSBForwards(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "usb-forwards.json")
+	reportPath := filepath.Join(tmpDir, "usb-forward-report.json")
+	specs := []usb.SessionSpec{
+		{
+			NodeID:     "node-a",
+			PeerNodeID: "node-b",
+			Local:      usb.DeviceDescriptor{BusID: "1", DeviceID: "3", VendorID: "1d6b", ProductID: "0002"},
+			Remote:     usb.DeviceDescriptor{VendorID: "1d6b", ProductID: "0002", Interface: "0"},
+		},
+	}
+
+	if err := SaveUSBForwards(path, specs); err != nil {
+		t.Fatalf("save usb forwards: %v", err)
+	}
+	if err := SaveUSBForwardReport(reportPath, []usb.SessionReport{usb.ConfiguredReport(specs[0], "linux-agent")}); err != nil {
+		t.Fatalf("save usb forward report: %v", err)
+	}
+
+	gotSpecs, err := LoadUSBForwards(path)
+	if err != nil {
+		t.Fatalf("load usb forwards: %v", err)
+	}
+	if len(gotSpecs) != 1 || gotSpecs[0].Local.BusID != "1" || gotSpecs[0].Remote.Interface != "0" {
+		t.Fatalf("unexpected usb forwarding state: %#v", gotSpecs)
+	}
+
+	gotReports, err := LoadUSBForwardReport(reportPath)
+	if err != nil {
+		t.Fatalf("load usb forward report: %v", err)
+	}
+	if len(gotReports) != 1 || gotReports[0].ClaimedBy != "linux-agent" {
+		t.Fatalf("unexpected usb forwarding report: %#v", gotReports)
 	}
 }

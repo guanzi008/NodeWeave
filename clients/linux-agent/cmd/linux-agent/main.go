@@ -51,8 +51,16 @@ func main() {
 		exitIfErr(runDirectAttemptReport(os.Args[2:]))
 	case "recovery-status":
 		exitIfErr(runRecoveryStatus(os.Args[2:]))
+	case "serial-forward-status":
+		exitIfErr(runSerialForwardStatus(os.Args[2:]))
+	case "serial-forward-report":
+		exitIfErr(runSerialForwardReport(os.Args[2:]))
 	case "stun-status":
 		exitIfErr(runSTUNStatus(os.Args[2:]))
+	case "usb-forward-status":
+		exitIfErr(runUSBForwardStatus(os.Args[2:]))
+	case "usb-forward-report":
+		exitIfErr(runUSBForwardReport(os.Args[2:]))
 	default:
 		printUsage()
 		os.Exit(2)
@@ -344,6 +352,44 @@ func runRecoveryStatus(args []string) error {
 	return printJSON(states)
 }
 
+func runSerialForwardStatus(args []string) error {
+	fs := flag.NewFlagSet("serial-forward-status", flag.ContinueOnError)
+	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+
+	specs, err := state.LoadSerialForwards(cfg.SerialForwardPath)
+	if err != nil {
+		return err
+	}
+	return printJSON(specs)
+}
+
+func runSerialForwardReport(args []string) error {
+	fs := flag.NewFlagSet("serial-forward-report", flag.ContinueOnError)
+	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+
+	reports, err := state.LoadSerialForwardReport(cfg.SerialForwardReportPath)
+	if err != nil {
+		return err
+	}
+	return printJSON(reports)
+}
+
 func runSTUNStatus(args []string) error {
 	fs := flag.NewFlagSet("stun-status", flag.ContinueOnError)
 	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
@@ -363,8 +409,46 @@ func runSTUNStatus(args []string) error {
 	return printJSON(report)
 }
 
+func runUSBForwardStatus(args []string) error {
+	fs := flag.NewFlagSet("usb-forward-status", flag.ContinueOnError)
+	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+
+	specs, err := state.LoadUSBForwards(cfg.USBForwardPath)
+	if err != nil {
+		return err
+	}
+	return printJSON(specs)
+}
+
+func runUSBForwardReport(args []string) error {
+	fs := flag.NewFlagSet("usb-forward-report", flag.ContinueOnError)
+	configPath := fs.String("config", config.DefaultPath(), "path to agent config")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+
+	reports, err := state.LoadUSBForwardReport(cfg.USBForwardReportPath)
+	if err != nil {
+		return err
+	}
+	return printJSON(reports)
+}
+
 func printUsage() {
-	fmt.Fprintln(os.Stderr, "usage: linux-agent <init-config|enroll|run|status|runtime-status|plan-status|apply-status|session-status|session-report|dataplane-status|transport-status|direct-attempt-status|direct-attempt-report|recovery-status|stun-status> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: linux-agent <init-config|enroll|run|status|runtime-status|plan-status|apply-status|session-status|session-report|dataplane-status|transport-status|direct-attempt-status|direct-attempt-report|recovery-status|serial-forward-status|serial-forward-report|usb-forward-status|usb-forward-report|stun-status> [flags]")
 }
 
 func exitIfErr(err error) {

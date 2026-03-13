@@ -71,6 +71,38 @@ cfg = {
     "direct_attempt_report_path": "$TMP_DIR/linux-agent-direct-attempt-report.json",
     "transport_report_path": "$TMP_DIR/linux-agent-transport-report.json",
     "recovery_state_path": "$TMP_DIR/linux-agent-recovery-state.json",
+    "serial_forward_path": "$TMP_DIR/linux-agent-serial-forwards.json",
+    "serial_forward_report_path": "$TMP_DIR/linux-agent-serial-forward-report.json",
+    "serial_forwards": [
+        {
+            "peer_node_id": "node-peer",
+            "local": {
+                "name": "/dev/ttyUSB0",
+                "baud_rate": 115200
+            },
+            "remote": {
+                "name": "COM5",
+                "baud_rate": 115200
+            }
+        }
+    ],
+    "usb_forward_path": "$TMP_DIR/linux-agent-usb-forwards.json",
+    "usb_forward_report_path": "$TMP_DIR/linux-agent-usb-forward-report.json",
+    "usb_forwards": [
+        {
+            "peer_node_id": "node-peer",
+            "local": {
+                "bus_id": "1",
+                "device_id": "2",
+                "vendor_id": "1d6b",
+                "product_id": "0002"
+            },
+            "remote": {
+                "vendor_id": "1d6b",
+                "product_id": "0002"
+            }
+        }
+    ],
     "stun_report_path": "$TMP_DIR/linux-agent-stun-report.json",
     "apply_mode": "linux-plan",
     "dataplane_mode": "secure-udp",
@@ -112,5 +144,9 @@ go run ./clients/linux-agent/cmd/linux-agent dataplane-status --config "$AGENT_C
 go run ./clients/linux-agent/cmd/linux-agent transport-status --config "$AGENT_CONFIG" >/dev/null
 go run ./clients/linux-agent/cmd/linux-agent direct-attempt-status --config "$AGENT_CONFIG" >/dev/null
 go run ./clients/linux-agent/cmd/linux-agent direct-attempt-report --config "$AGENT_CONFIG" >/dev/null
+go run ./clients/linux-agent/cmd/linux-agent serial-forward-status --config "$AGENT_CONFIG" >/dev/null
+go run ./clients/linux-agent/cmd/linux-agent serial-forward-report --config "$AGENT_CONFIG" >/dev/null
+go run ./clients/linux-agent/cmd/linux-agent usb-forward-status --config "$AGENT_CONFIG" >/dev/null
+go run ./clients/linux-agent/cmd/linux-agent usb-forward-report --config "$AGENT_CONFIG" >/dev/null
 
 echo "e2e smoke passed"

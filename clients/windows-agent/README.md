@@ -19,6 +19,10 @@ go run ./cmd/windows-agent status --config ~/.config/nodeweave/windows-agent.jso
 go run ./cmd/windows-agent bootstrap-status --config ~/.config/nodeweave/windows-agent.json
 go run ./cmd/windows-agent runtime-status --config ~/.config/nodeweave/windows-agent.json
 go run ./cmd/windows-agent heartbeat --config ~/.config/nodeweave/windows-agent.json
+go run ./cmd/windows-agent serial-forward-status --config ~/.config/nodeweave/windows-agent.json
+go run ./cmd/windows-agent serial-forward-report --config ~/.config/nodeweave/windows-agent.json
+go run ./cmd/windows-agent usb-forward-status --config ~/.config/nodeweave/windows-agent.json
+go run ./cmd/windows-agent usb-forward-report --config ~/.config/nodeweave/windows-agent.json
 ```
 
 ## 当前实现边界
@@ -27,6 +31,8 @@ go run ./cmd/windows-agent heartbeat --config ~/.config/nodeweave/windows-agent.
 - 当前不会直接创建 Wintun、Windows 路由或 DNS
 - `advertise_endpoints` 会作为静态 endpoint observation 上报控制面
 - 控制面变更后会在 heartbeat/bootstrap 周期内刷新本地 runtime
+- `serial_forwards` / `usb_forwards` 当前会落配置和 report 文件，作为 Windows forwarding 会话管理基线
+- 当前不会直接打开 Windows 串口或 USB 设备
 
 ## 构建
 

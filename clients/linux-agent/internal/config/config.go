@@ -6,55 +6,64 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"nodeweave/packages/runtime/go/forwarding/serial"
+	"nodeweave/packages/runtime/go/forwarding/usb"
 )
 
 type Config struct {
-	ServerURL                string        `json:"server_url"`
-	RegistrationToken        string        `json:"registration_token"`
-	DeviceName               string        `json:"device_name"`
-	Platform                 string        `json:"platform"`
-	Version                  string        `json:"version"`
-	PublicKey                string        `json:"public_key"`
-	PrivateKeyPath           string        `json:"private_key_path"`
-	StatePath                string        `json:"state_path"`
-	BootstrapPath            string        `json:"bootstrap_path"`
-	RuntimePath              string        `json:"runtime_path"`
-	PlanPath                 string        `json:"plan_path"`
-	ApplyReportPath          string        `json:"apply_report_path"`
-	SessionPath              string        `json:"session_path"`
-	SessionReportPath        string        `json:"session_report_path"`
-	DataplanePath            string        `json:"dataplane_path"`
-	DirectAttemptPath        string        `json:"direct_attempt_path"`
-	DirectAttemptReportPath  string        `json:"direct_attempt_report_path"`
-	TransportReportPath      string        `json:"transport_report_path"`
-	RecoveryStatePath        string        `json:"recovery_state_path"`
-	STUNServers              []string      `json:"stun_servers"`
-	STUNReportPath           string        `json:"stun_report_path"`
-	AdvertiseEndpoints       []string      `json:"advertise_endpoints"`
-	RelayRegion              string        `json:"relay_region"`
-	AutoEnroll               bool          `json:"auto_enroll"`
-	ApplyMode                string        `json:"apply_mode"`
-	DataplaneMode            string        `json:"dataplane_mode"`
-	DataplaneListenAddress   string        `json:"dataplane_listen_address"`
-	TunnelMode               string        `json:"tunnel_mode"`
-	TunnelName               string        `json:"tunnel_name"`
-	InterfaceName            string        `json:"interface_name"`
-	InterfaceMTU             int           `json:"interface_mtu"`
-	ExecRequireRoot          bool          `json:"exec_require_root"`
-	ExecCommandTimeout       time.Duration `json:"-"`
-	ExecCommandTimeoutText   string        `json:"exec_command_timeout"`
-	SessionProbeMode         string        `json:"session_probe_mode"`
-	SessionListenAddress     string        `json:"session_listen_address"`
-	SessionProbeTimeout      time.Duration `json:"-"`
-	SessionProbeTimeoutText  string        `json:"session_probe_timeout"`
-	STUNTimeout              time.Duration `json:"-"`
-	STUNTimeoutText          string        `json:"stun_timeout"`
-	DirectWarmupInterval     time.Duration `json:"-"`
-	DirectWarmupIntervalText string        `json:"direct_warmup_interval"`
-	HeartbeatInterval        time.Duration `json:"-"`
-	BootstrapInterval        time.Duration `json:"-"`
-	HeartbeatIntervalText    string        `json:"heartbeat_interval"`
-	BootstrapIntervalText    string        `json:"bootstrap_interval"`
+	ServerURL                string               `json:"server_url"`
+	RegistrationToken        string               `json:"registration_token"`
+	DeviceName               string               `json:"device_name"`
+	Platform                 string               `json:"platform"`
+	Version                  string               `json:"version"`
+	PublicKey                string               `json:"public_key"`
+	PrivateKeyPath           string               `json:"private_key_path"`
+	StatePath                string               `json:"state_path"`
+	BootstrapPath            string               `json:"bootstrap_path"`
+	RuntimePath              string               `json:"runtime_path"`
+	PlanPath                 string               `json:"plan_path"`
+	ApplyReportPath          string               `json:"apply_report_path"`
+	SessionPath              string               `json:"session_path"`
+	SessionReportPath        string               `json:"session_report_path"`
+	DataplanePath            string               `json:"dataplane_path"`
+	DirectAttemptPath        string               `json:"direct_attempt_path"`
+	DirectAttemptReportPath  string               `json:"direct_attempt_report_path"`
+	TransportReportPath      string               `json:"transport_report_path"`
+	RecoveryStatePath        string               `json:"recovery_state_path"`
+	SerialForwardPath        string               `json:"serial_forward_path"`
+	SerialForwardReportPath  string               `json:"serial_forward_report_path"`
+	SerialForwards           []serial.SessionSpec `json:"serial_forwards,omitempty"`
+	USBForwardPath           string               `json:"usb_forward_path"`
+	USBForwardReportPath     string               `json:"usb_forward_report_path"`
+	USBForwards              []usb.SessionSpec    `json:"usb_forwards,omitempty"`
+	STUNServers              []string             `json:"stun_servers"`
+	STUNReportPath           string               `json:"stun_report_path"`
+	AdvertiseEndpoints       []string             `json:"advertise_endpoints"`
+	RelayRegion              string               `json:"relay_region"`
+	AutoEnroll               bool                 `json:"auto_enroll"`
+	ApplyMode                string               `json:"apply_mode"`
+	DataplaneMode            string               `json:"dataplane_mode"`
+	DataplaneListenAddress   string               `json:"dataplane_listen_address"`
+	TunnelMode               string               `json:"tunnel_mode"`
+	TunnelName               string               `json:"tunnel_name"`
+	InterfaceName            string               `json:"interface_name"`
+	InterfaceMTU             int                  `json:"interface_mtu"`
+	ExecRequireRoot          bool                 `json:"exec_require_root"`
+	ExecCommandTimeout       time.Duration        `json:"-"`
+	ExecCommandTimeoutText   string               `json:"exec_command_timeout"`
+	SessionProbeMode         string               `json:"session_probe_mode"`
+	SessionListenAddress     string               `json:"session_listen_address"`
+	SessionProbeTimeout      time.Duration        `json:"-"`
+	SessionProbeTimeoutText  string               `json:"session_probe_timeout"`
+	STUNTimeout              time.Duration        `json:"-"`
+	STUNTimeoutText          string               `json:"stun_timeout"`
+	DirectWarmupInterval     time.Duration        `json:"-"`
+	DirectWarmupIntervalText string               `json:"direct_warmup_interval"`
+	HeartbeatInterval        time.Duration        `json:"-"`
+	BootstrapInterval        time.Duration        `json:"-"`
+	HeartbeatIntervalText    string               `json:"heartbeat_interval"`
+	BootstrapIntervalText    string               `json:"bootstrap_interval"`
 }
 
 func DefaultPath() string {
@@ -96,6 +105,12 @@ func Default() Config {
 		DirectAttemptReportPath:  filepath.Join(baseDir, "nodeweave", "linux-agent-direct-attempt-report.json"),
 		TransportReportPath:      filepath.Join(baseDir, "nodeweave", "linux-agent-transport-report.json"),
 		RecoveryStatePath:        filepath.Join(baseDir, "nodeweave", "linux-agent-recovery-state.json"),
+		SerialForwardPath:        filepath.Join(baseDir, "nodeweave", "linux-agent-serial-forwards.json"),
+		SerialForwardReportPath:  filepath.Join(baseDir, "nodeweave", "linux-agent-serial-forward-report.json"),
+		SerialForwards:           []serial.SessionSpec{},
+		USBForwardPath:           filepath.Join(baseDir, "nodeweave", "linux-agent-usb-forwards.json"),
+		USBForwardReportPath:     filepath.Join(baseDir, "nodeweave", "linux-agent-usb-forward-report.json"),
+		USBForwards:              []usb.SessionSpec{},
 		STUNServers:              []string{},
 		STUNReportPath:           filepath.Join(baseDir, "nodeweave", "linux-agent-stun-report.json"),
 		AdvertiseEndpoints:       []string{},
@@ -188,6 +203,12 @@ func Load(path string) (Config, error) {
 	cfg.SessionProbeTimeout = sessionProbeTimeout
 	cfg.STUNTimeout = stunTimeout
 	cfg.DirectWarmupInterval = directWarmupInterval
+	for idx, spec := range cfg.SerialForwards {
+		cfg.SerialForwards[idx] = serial.NormalizeSessionSpec(spec)
+	}
+	for idx, spec := range cfg.USBForwards {
+		cfg.USBForwards[idx] = usb.NormalizeSessionSpec(spec)
+	}
 	return cfg, nil
 }
 

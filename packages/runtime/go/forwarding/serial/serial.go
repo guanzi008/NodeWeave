@@ -45,6 +45,20 @@ type SessionReport struct {
 	LastError          string     `json:"last_error,omitempty"`
 }
 
+func ConfiguredReport(spec SessionSpec, closedBy string) SessionReport {
+	spec = NormalizeSessionSpec(spec)
+	return SessionReport{
+		SessionID:  spec.SessionID,
+		NodeID:     spec.NodeID,
+		PeerNodeID: spec.PeerNodeID,
+		Transport:  spec.Transport,
+		Local:      spec.Local,
+		Remote:     spec.Remote,
+		Status:     "configured",
+		ClosedBy:   strings.TrimSpace(closedBy),
+	}
+}
+
 type Session struct {
 	spec   SessionSpec
 	local  io.ReadWriteCloser

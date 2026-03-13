@@ -24,6 +24,8 @@ import (
 	"nodeweave/packages/runtime/go/driver/dryrun"
 	"nodeweave/packages/runtime/go/driver/linuxexec"
 	linuxplandriver "nodeweave/packages/runtime/go/driver/linuxplan"
+	"nodeweave/packages/runtime/go/forwarding/serial"
+	"nodeweave/packages/runtime/go/forwarding/usb"
 	"nodeweave/packages/runtime/go/overlay"
 	linuxplan "nodeweave/packages/runtime/go/plan/linux"
 	"nodeweave/packages/runtime/go/secureudp"
@@ -245,6 +247,9 @@ func (s *Service) ApplyRuntime(ctx context.Context) error {
 	if err := state.SaveApplyReport(s.cfg.ApplyReportPath, report); err != nil {
 		return err
 	}
+	if err := s.persistForwardingState(); err != nil {
+		return err
+	}
 	if applyErr != nil {
 		return fmt.Errorf("apply overlay runtime: %w", applyErr)
 	}
@@ -257,6 +262,43 @@ func (s *Service) ApplyRuntime(ctx context.Context) error {
 func (s *Service) SendHeartbeat(ctx context.Context) error {
 	_, err := s.sendHeartbeat(ctx)
 	return err
+}
+
+func (s *Service) persistForwardingState() error {
+	serialSpecs := make([]serial.SessionSpec, 0, len(s.cfg.SerialForwards))
+	serialReports := make([]serial.SessionReport, 0, len(s.cfg.SerialForwards))
+	for _, spec := range s.cfg.SerialForwards {
+		spec = serial.NormalizeSessionSpec(spec)
+		if strings.TrimSpace(spec.NodeID) == "" {
+			spec.NodeID = s.state.Node.ID
+		}
+		serialSpecs = append(serialSpecs, spec)
+		serialReports = append(serialReports, serial.ConfiguredReport(spec, s.cfg.Platform))
+	}
+	if err := state.SaveSerialForwards(s.cfg.SerialForwardPath, serialSpecs); err != nil {
+		return err
+	}
+	if err := state.SaveSerialForwardReport(s.cfg.SerialForwardReportPath, serialReports); err != nil {
+		return err
+	}
+
+	usbSpecs := make([]usb.SessionSpec, 0, len(s.cfg.USBForwards))
+	usbReports := make([]usb.SessionReport, 0, len(s.cfg.USBForwards))
+	for _, spec := range s.cfg.USBForwards {
+		spec = usb.NormalizeSessionSpec(spec)
+		if strings.TrimSpace(spec.NodeID) == "" {
+			spec.NodeID = s.state.Node.ID
+		}
+		usbSpecs = append(usbSpecs, spec)
+		usbReports = append(usbReports, usb.ConfiguredReport(spec, s.cfg.Platform))
+	}
+	if err := state.SaveUSBForwards(s.cfg.USBForwardPath, usbSpecs); err != nil {
+		return err
+	}
+	if err := state.SaveUSBForwardReport(s.cfg.USBForwardReportPath, usbReports); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) sendHeartbeat(ctx context.Context) (api.HeartbeatResponse, error) {

@@ -6,27 +6,36 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"nodeweave/packages/runtime/go/forwarding/serial"
+	"nodeweave/packages/runtime/go/forwarding/usb"
 )
 
 type Config struct {
-	ServerURL             string        `json:"server_url"`
-	RegistrationToken     string        `json:"registration_token"`
-	DeviceName            string        `json:"device_name"`
-	Platform              string        `json:"platform"`
-	Version               string        `json:"version"`
-	PublicKey             string        `json:"public_key"`
-	StatePath             string        `json:"state_path"`
-	BootstrapPath         string        `json:"bootstrap_path"`
-	RuntimePath           string        `json:"runtime_path"`
-	AdvertiseEndpoints    []string      `json:"advertise_endpoints"`
-	RelayRegion           string        `json:"relay_region"`
-	AutoEnroll            bool          `json:"auto_enroll"`
-	InterfaceName         string        `json:"interface_name"`
-	InterfaceMTU          int           `json:"interface_mtu"`
-	HeartbeatInterval     time.Duration `json:"-"`
-	BootstrapInterval     time.Duration `json:"-"`
-	HeartbeatIntervalText string        `json:"heartbeat_interval"`
-	BootstrapIntervalText string        `json:"bootstrap_interval"`
+	ServerURL               string               `json:"server_url"`
+	RegistrationToken       string               `json:"registration_token"`
+	DeviceName              string               `json:"device_name"`
+	Platform                string               `json:"platform"`
+	Version                 string               `json:"version"`
+	PublicKey               string               `json:"public_key"`
+	StatePath               string               `json:"state_path"`
+	BootstrapPath           string               `json:"bootstrap_path"`
+	RuntimePath             string               `json:"runtime_path"`
+	SerialForwardPath       string               `json:"serial_forward_path"`
+	SerialForwardReportPath string               `json:"serial_forward_report_path"`
+	SerialForwards          []serial.SessionSpec `json:"serial_forwards,omitempty"`
+	USBForwardPath          string               `json:"usb_forward_path"`
+	USBForwardReportPath    string               `json:"usb_forward_report_path"`
+	USBForwards             []usb.SessionSpec    `json:"usb_forwards,omitempty"`
+	AdvertiseEndpoints      []string             `json:"advertise_endpoints"`
+	RelayRegion             string               `json:"relay_region"`
+	AutoEnroll              bool                 `json:"auto_enroll"`
+	InterfaceName           string               `json:"interface_name"`
+	InterfaceMTU            int                  `json:"interface_mtu"`
+	HeartbeatInterval       time.Duration        `json:"-"`
+	BootstrapInterval       time.Duration        `json:"-"`
+	HeartbeatIntervalText   string               `json:"heartbeat_interval"`
+	BootstrapIntervalText   string               `json:"bootstrap_interval"`
 }
 
 func DefaultPath() string {
@@ -49,24 +58,30 @@ func Default() Config {
 	}
 
 	return Config{
-		ServerURL:             "http://127.0.0.1:8080",
-		RegistrationToken:     "dev-register-token",
-		DeviceName:            deviceName,
-		Platform:              "windows-agent",
-		Version:               "0.1.0",
-		PublicKey:             "",
-		StatePath:             filepath.Join(baseDir, "nodeweave", "windows-agent-state.json"),
-		BootstrapPath:         filepath.Join(baseDir, "nodeweave", "windows-agent-bootstrap.json"),
-		RuntimePath:           filepath.Join(baseDir, "nodeweave", "windows-agent-runtime.json"),
-		AdvertiseEndpoints:    []string{},
-		RelayRegion:           "",
-		AutoEnroll:            true,
-		InterfaceName:         "NodeWeave",
-		InterfaceMTU:          1380,
-		HeartbeatInterval:     10 * time.Second,
-		BootstrapInterval:     30 * time.Second,
-		HeartbeatIntervalText: "10s",
-		BootstrapIntervalText: "30s",
+		ServerURL:               "http://127.0.0.1:8080",
+		RegistrationToken:       "dev-register-token",
+		DeviceName:              deviceName,
+		Platform:                "windows-agent",
+		Version:                 "0.1.0",
+		PublicKey:               "",
+		StatePath:               filepath.Join(baseDir, "nodeweave", "windows-agent-state.json"),
+		BootstrapPath:           filepath.Join(baseDir, "nodeweave", "windows-agent-bootstrap.json"),
+		RuntimePath:             filepath.Join(baseDir, "nodeweave", "windows-agent-runtime.json"),
+		SerialForwardPath:       filepath.Join(baseDir, "nodeweave", "windows-agent-serial-forwards.json"),
+		SerialForwardReportPath: filepath.Join(baseDir, "nodeweave", "windows-agent-serial-forward-report.json"),
+		SerialForwards:          []serial.SessionSpec{},
+		USBForwardPath:          filepath.Join(baseDir, "nodeweave", "windows-agent-usb-forwards.json"),
+		USBForwardReportPath:    filepath.Join(baseDir, "nodeweave", "windows-agent-usb-forward-report.json"),
+		USBForwards:             []usb.SessionSpec{},
+		AdvertiseEndpoints:      []string{},
+		RelayRegion:             "",
+		AutoEnroll:              true,
+		InterfaceName:           "NodeWeave",
+		InterfaceMTU:            1380,
+		HeartbeatInterval:       10 * time.Second,
+		BootstrapInterval:       30 * time.Second,
+		HeartbeatIntervalText:   "10s",
+		BootstrapIntervalText:   "30s",
 	}
 }
 
@@ -99,6 +114,12 @@ func Load(path string) (Config, error) {
 
 	cfg.HeartbeatInterval = heartbeatInterval
 	cfg.BootstrapInterval = bootstrapInterval
+	for idx, spec := range cfg.SerialForwards {
+		cfg.SerialForwards[idx] = serial.NormalizeSessionSpec(spec)
+	}
+	for idx, spec := range cfg.USBForwards {
+		cfg.USBForwards[idx] = usb.NormalizeSessionSpec(spec)
+	}
 	return cfg, nil
 }
 

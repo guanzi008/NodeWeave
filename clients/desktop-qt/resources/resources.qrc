@@ -1,5 +1,5 @@
 <RCC>
   <qresource prefix="/">
-    <file alias="icons/nodeweave-desktop.svg">nodeweave-desktop.svg</file>
+    <file alias="icons/nodeweave.svg">nodeweave.svg</file>
   </qresource>
 </RCC>

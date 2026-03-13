@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=NodeWeave 桌面客户端
+Name=NodeWeave 客户端
 GenericName=企业组网客户端
 Comment=NodeWeave 图形管理客户端
-Exec=nodeweave-desktop
-Icon=nodeweave-desktop
+Exec=nodeweave
+Icon=nodeweave
 Terminal=false
 Categories=Network;Utility;
 StartupNotify=true
-StartupWMClass=nodeweave-desktop
+StartupWMClass=nodeweave
 Keywords=NodeWeave;VPN;Overlay;Mesh;Relay;

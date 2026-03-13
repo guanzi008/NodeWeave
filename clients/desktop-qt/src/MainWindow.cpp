@@ -101,7 +101,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 }
 
 void MainWindow::buildUi() {
-    setWindowTitle(QStringLiteral("NodeWeave 桌面客户端"));
+    setWindowTitle(QStringLiteral("NodeWeave 客户端"));
     resize(1360, 900);
 
     QWidget *central = new QWidget(this);

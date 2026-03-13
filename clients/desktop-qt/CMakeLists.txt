@@ -38,12 +38,12 @@ target_compile_definitions(nodeweave-desktop PRIVATE
 )
 
 set_target_properties(nodeweave-desktop PROPERTIES
-    OUTPUT_NAME "nodeweave-desktop"
+    OUTPUT_NAME "nodeweave"
 )
 
 configure_file(
-    resources/nodeweave-desktop.desktop.in
-    ${CMAKE_CURRENT_BINARY_DIR}/nodeweave-desktop.desktop
+    resources/nodeweave.desktop.in
+    ${CMAKE_CURRENT_BINARY_DIR}/nodeweave.desktop
     @ONLY
 )
 
@@ -53,11 +53,11 @@ install(TARGETS nodeweave-desktop
 )
 
 install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/nodeweave-desktop.desktop
+    ${CMAKE_CURRENT_BINARY_DIR}/nodeweave.desktop
     DESTINATION share/applications
 )
 
 install(FILES
-    resources/nodeweave-desktop.svg
+    resources/nodeweave.svg
     DESTINATION share/icons/hicolor/scalable/apps
 )

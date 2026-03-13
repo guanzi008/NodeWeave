@@ -3,6 +3,8 @@ go 1.26.1
 use (
 	./clients/linux-agent
 	./clients/linux-cli
+	./clients/windows-agent
+	./clients/windows-cli
 	./packages/contracts/go
 	./packages/runtime/go
 	./services/controlplane

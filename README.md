@@ -1,6 +1,6 @@
 # 企业级异地组网系统
 
-本仓库当前采用 monorepo 结构，已经包含可运行的控制面、共享契约模块和 Linux CLI 客户端基线。
+本仓库当前采用 monorepo 结构，已经包含可运行的控制面、共享契约模块、Linux 客户端主线，以及 Windows 客户端骨架和串口转发运行时基础层。
 
 ## 文档索引
 
@@ -46,7 +46,10 @@
 - `services/controlplane/internal/store`：SQLite 持久化和内存实现
 - `clients/linux-agent/cmd/linux-agent`：Linux 常驻节点代理
 - `clients/linux-cli/cmd/linux-cli`：Linux CLI 注册、状态查询、心跳
+- `clients/windows-agent/cmd/windows-agent`：Windows 常驻节点代理骨架
+- `clients/windows-cli/cmd/windows-cli`：Windows CLI 注册、状态查询、心跳
 - `packages/runtime/go`：共享 overlay runtime 和 driver 抽象
+- `packages/runtime/go/forwarding/serial`：串口转发共享运行时基础层
 - `deployments/local/docker-compose.yml`：本地容器化部署
 - `scripts/e2e_smoke.sh`：端到端冒烟验证
 - `.github/workflows/ci.yml`：CI 构建测试与镜像构建
@@ -76,6 +79,9 @@ go run ./clients/linux-agent/cmd/linux-agent transport-status --config ~/.config
 go run ./clients/linux-agent/cmd/linux-agent direct-attempt-status --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/linux-agent/cmd/linux-agent direct-attempt-report --config ~/.config/nodeweave/linux-agent.json
 go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.json
+go run ./clients/windows-cli/cmd/windows-cli enroll --server http://127.0.0.1:8080
+go run ./clients/windows-agent/cmd/windows-agent init-config
+go run ./clients/windows-agent/cmd/windows-agent runtime-status --config ~/.config/nodeweave/windows-agent.json
 ```
 
 默认监听地址：
@@ -137,6 +143,13 @@ go run ./clients/linux-agent/cmd/linux-agent stun-status --config ~/.config/node
 - `secure-udp` 运行时会持续写出 transport report，暴露当前 active path、候选列表、最近握手时间、direct 重试窗口、最后一次 direct attempt 的 ID/原因/结果，以及每个 peer 的收发计数和 fallback/recovery 统计
 - `relay` 服务已支持基于 `source_node_id` 的 UDP 地址映射和 `secure-udp` 报文的透明转发
 - `tunnel` 运行时已提供 Linux TUN 设备和 packet pump 骨架，可把 TUN packet 接到 dataplane transport
+
+当前 Windows / 串口进展：
+
+- `windows-cli` 已打通注册、登录、heartbeat、bootstrap 和节点查询
+- `windows-agent` 已打通注册、heartbeat、bootstrap 同步和 `windows-dry-run` runtime snapshot 编译
+- `windows-agent` 当前不直接创建 Wintun、Windows 路由或 DNS，先把控制面接入和本地 runtime 文件链路落地
+- `packages/runtime/go/forwarding/serial` 已提供串口会话建模、流参数标准化和双向 stream bridge，可作为后续串口转发和 TCP encapsulation 的共享基础层
 
 ## 常用命令
 

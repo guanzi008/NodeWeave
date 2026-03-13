@@ -1,0 +1,18 @@
+{
+  "server_url": "http://127.0.0.1:8080",
+  "registration_token": "dev-register-token",
+  "device_name": "windows-agent",
+  "platform": "windows-agent",
+  "version": "0.1.0",
+  "public_key": "",
+  "state_path": "./data/windows-agent-state.json",
+  "bootstrap_path": "./data/windows-agent-bootstrap.json",
+  "runtime_path": "./data/windows-agent-runtime.json",
+  "advertise_endpoints": [],
+  "relay_region": "",
+  "auto_enroll": true,
+  "interface_name": "NodeWeave",
+  "interface_mtu": 1380,
+  "heartbeat_interval": "10s",
+  "bootstrap_interval": "30s"
+}

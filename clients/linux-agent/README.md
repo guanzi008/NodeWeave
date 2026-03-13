@@ -41,9 +41,32 @@ go run ./cmd/linux-agent stun-status --config ~/.config/nodeweave/linux-agent.js
 ## 串口 / USB forwarding
 
 - `serial_forwards` 和 `usb_forwards` 会在 runtime apply 时规范化后落盘
-- `serial-forward-status` / `usb-forward-status` 用于查看当前配置的 forwarding sessions
-- `serial-forward-report` / `usb-forward-report` 用于查看当前 agent 生成的 forwarding report 基线
-- 当前这条链路先落配置、状态文件和报告，不直接打开本机串口或 USB 设备
+- `run` 模式下，Linux agent 现在会真正启动 forwarding runtime，而不只是写状态文件
+- `serial-forward-status` / `usb-forward-status` 用于查看当前 forwarding sessions
+- `serial-forward-report` / `usb-forward-report` 用于查看最近一次真实转发运行报告
+
+### 串口真转发
+
+- 同一条 `serial_forwards[*]` 需要同时下发到两端节点
+- `node_id` 一侧会使用 `local` 里的串口设备
+- `peer_node_id` 一侧会使用 `remote` 里的串口设备
+- agent 会根据 overlay peer 地址自动建立 TCP encapsulation，再把真实串口双向桥接过去
+- 串口默认传输是 `tcp-encap`
+- 需要确保本机用户对目标串口有打开权限，例如加入 `dialout` / `uucp` 之类的设备组
+
+### USB 真转发
+
+- USB 真转发当前只在 Linux agent 落地，底层依赖系统 `usbip` / `usbipd`
+- 同一条 `usb_forwards[*]` 也需要同时下发到两端节点
+- `node_id` 一侧会把本机 USB 设备导出为 usbip exporter
+- `peer_node_id` 一侧会通过 overlay peer 地址执行 `usbip attach`
+- 需要内核和系统里具备 usbip 相关模块、工具和权限
+- 如果系统没有 `usbip`、`usbipd` 或缺少 root 权限，report 会直接给出错误原因
+
+### 当前边界
+
+- Linux agent 已支持真实串口转发和基于 usbip 的真实 USB 转发
+- Windows agent 当前仍只保存 forwarding 配置和 report，不会直接打开串口或 USB 设备
 
 ## 身份和密钥
 

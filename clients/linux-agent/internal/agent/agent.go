@@ -40,6 +40,11 @@ type Service struct {
 	state         state.File
 	runtimeDriver driver.Driver
 
+	forwardingMu        sync.Mutex
+	forwardingSignature string
+	serialManager       *serial.Manager
+	usbManager          *usb.Manager
+
 	dataplaneMu       sync.Mutex
 	dataplaneRuntime  *activeDataplane
 	attemptMu         sync.Mutex
@@ -452,6 +457,7 @@ func (s *Service) refreshBootstrapIfNeeded(ctx context.Context, observedVersion 
 	if err := s.ApplyRuntime(context.WithoutCancel(ctx)); err != nil {
 		return fmt.Errorf("refresh runtime after heartbeat: %w", err)
 	}
+	s.reloadForwardingRuntimes(context.WithoutCancel(ctx))
 	if err := s.reloadDataplane(ctx); err != nil {
 		return fmt.Errorf("refresh dataplane after heartbeat: %w", err)
 	}
@@ -475,10 +481,12 @@ func (s *Service) Run(ctx context.Context) error {
 	if err := s.ApplyRuntime(ctx); err != nil {
 		return err
 	}
+	s.reloadForwardingRuntimes(ctx)
 	if err := s.reloadDataplane(ctx); err != nil {
 		return err
 	}
 	defer s.stopDataplane()
+	defer s.stopForwardingRuntimes()
 	if err := s.heartbeatAndRefreshBootstrap(ctx); err != nil {
 		return err
 	}
@@ -508,6 +516,7 @@ func (s *Service) Run(ctx context.Context) error {
 				log.Printf("runtime apply failed: %v", err)
 				continue
 			}
+			s.reloadForwardingRuntimes(context.WithoutCancel(ctx))
 			if err := s.reloadDataplane(ctx); err != nil {
 				log.Printf("dataplane reload failed: %v", err)
 				continue

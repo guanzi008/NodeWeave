@@ -77,5 +77,7 @@ cmake --install build/desktop-qt --prefix ~/.local
 - 当前没有 `.ui` 文件，界面全由 C++ 代码构建
 - 串口标签页会自动扫描本机串口设备，并根据当前驱动给出中文规则建议
 - USB 标签页会自动扫描本机 USB 设备，并显示驱动/类别对应的转发建议
+- 当前导出的 Linux agent forwarding snippet 已可驱动真实串口转发和基于 usbip 的真实 USB 转发
+- Windows agent snippet 目前仍是配置和报告链路，不会直接打开 Windows 串口或 USB 设备
 - 当前串口 / USB 规则是内置启发式规则，不等同于完整驱动兼容矩阵
 - 当前没有打包脚本，先保证开发态构建和运行

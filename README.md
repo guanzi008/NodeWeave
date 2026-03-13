@@ -1,6 +1,6 @@
 # 企业级异地组网系统
 
-本仓库当前采用 monorepo 结构，已经包含可运行的控制面、共享契约模块、Linux 客户端主线，以及 Windows 客户端骨架和串口转发运行时基础层。
+本仓库当前采用 monorepo 结构，已经包含可运行的控制面、共享契约模块、Linux 客户端主线、Windows 客户端骨架，以及 Linux 侧真实串口 / USB 转发能力。
 
 ## 文档索引
 
@@ -50,7 +50,8 @@
 - `clients/windows-cli/cmd/windows-cli`：Windows CLI 注册、状态查询、心跳
 - `clients/desktop-qt`：Qt5/Qt6 + CMake 图形客户端骨架
 - `packages/runtime/go`：共享 overlay runtime 和 driver 抽象
-- `packages/runtime/go/forwarding/serial`：串口转发共享运行时基础层
+- `packages/runtime/go/forwarding/serial`：Linux 串口真转发共享运行时
+- `packages/runtime/go/forwarding/usb`：Linux USB 真转发共享运行时
 - `deployments/local/docker-compose.yml`：本地容器化部署
 - `scripts/e2e_smoke.sh`：端到端冒烟验证
 - `.github/workflows/ci.yml`：CI 构建测试与镜像构建
@@ -151,14 +152,15 @@ cmake --build ./build/desktop-qt -j
 - `relay` 服务已支持基于 `source_node_id` 的 UDP 地址映射和 `secure-udp` 报文的透明转发
 - `tunnel` 运行时已提供 Linux TUN 设备和 packet pump 骨架，可把 TUN packet 接到 dataplane transport
 
-当前 Windows / 串口进展：
+当前 Windows / forwarding 进展：
 
 - `windows-cli` 已打通注册、登录、heartbeat、bootstrap 和节点查询
 - `windows-agent` 已打通注册、heartbeat、bootstrap 同步和 `windows-dry-run` runtime snapshot 编译
 - `windows-agent` 当前不直接创建 Wintun、Windows 路由或 DNS，先把控制面接入和本地 runtime 文件链路落地
-- `packages/runtime/go/forwarding/serial` 已提供串口会话建模、流参数标准化和双向 stream bridge，可作为后续串口转发和 TCP encapsulation 的共享基础层
-- `packages/runtime/go/forwarding/usb` 已提供 USB 设备描述、会话建模、兼容性匹配和 forwarding report 基础层
-- `linux-agent` / `windows-agent` 现在都会把 `serial_forwards` 和 `usb_forwards` 落成独立状态文件与 report，可直接用状态命令读取
+- `packages/runtime/go/forwarding/serial` 现在已经能在 Linux agent `run` 模式下打开真实串口设备，并通过 overlay 上的 TCP encapsulation 做双向桥接
+- `packages/runtime/go/forwarding/usb` 现在已经能在 Linux agent `run` 模式下基于系统 `usbip` / `usbipd` 做真实 USB 导出和 attach
+- `linux-agent` 现在会在 runtime reload 后自动启动 / 停止这些 forwarding runtime，并持续写回 forwarding report
+- `windows-agent` 目前仍只会把 `serial_forwards` 和 `usb_forwards` 落成独立状态文件与 report，可直接用状态命令读取，但不会直接打开 Windows 串口或 USB 设备
 - `desktop-qt` 已提供 Qt5/Qt6 兼容的图形客户端骨架，当前可执行控制面健康检查、管理员登录、节点列表查询、设备注册，以及串口 / USB 映射编辑、本机串口/USB 自动扫描、驱动/规则提示、Linux / Windows agent forwarding snippet 导入导出和本地 forwarding report 查看
 - `desktop-qt` 当前界面文案已完成中文化，适合作为 Linux / Windows 桌面客户端的统一 GUI 基线
 - `desktop-qt` 已补齐 Linux/DDE 任务栏图标识别所需的窗口图标、`nodeweave` desktop file name、`.desktop` 启动项和 `hicolor` 图标安装路径

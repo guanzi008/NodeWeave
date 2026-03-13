@@ -33,6 +33,7 @@ go run ./cmd/windows-agent usb-forward-report --config ~/.config/nodeweave/windo
 - 控制面变更后会在 heartbeat/bootstrap 周期内刷新本地 runtime
 - `serial_forwards` / `usb_forwards` 当前会落配置和 report 文件，作为 Windows forwarding 会话管理基线
 - 当前不会直接打开 Windows 串口或 USB 设备
+- 当前真实串口转发和真实 USB 转发只在 Linux agent 落地
 
 ## 构建
 
